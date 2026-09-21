@@ -1,0 +1,13 @@
+.DS_Store
+.swiftpm/
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+android/.gradle/
+android/build/
+android/local.properties
+android/.cxx/
+*.iml
+.idea/
+.kotlin/
