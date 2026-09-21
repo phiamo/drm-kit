@@ -1,10 +1,10 @@
 package org.dwbn.drmkit
 
-import java.util.Base64
 import java.util.regex.Pattern
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
 
 object DrmIdentifiers {
     private val UUID_PATTERN: Pattern = Pattern.compile(
@@ -44,10 +44,10 @@ object DrmIdentifiers {
 
     @JvmStatic
     fun axinomKeyValue(keyBytes: ByteArray): String =
-        Base64.getEncoder().encodeToString(keyBytes)
+        Base64.encode(keyBytes)
 
     /**
-     * AES-128-CBC without padding: first 16 bytes of the communication key, IV = KID bytes.
+     * AES-CBC without padding, IV = KID bytes. A 32-byte communication key uses AES-256; a 16-byte key uses AES-128.
      */
     @JvmStatic
     fun encryptContentKeyForAxinom(
@@ -55,11 +55,12 @@ object DrmIdentifiers {
         communicationKey: ByteArray,
         kidBytes: ByteArray,
     ): ByteArray {
-        val aesKey = communicationKey.copyOfRange(0, minOf(16, communicationKey.size))
-        if (contentKey.size != 16 || aesKey.size != 16 || kidBytes.size != 16) {
-            throw IllegalArgumentException("Expected 16-byte AES inputs")
+        if (contentKey.size != 16 || kidBytes.size != 16 ||
+            (communicationKey.size != 16 && communicationKey.size != 32)
+        ) {
+            throw IllegalArgumentException("Expected a 16-byte content key and a 16- or 32-byte communication key")
         }
-        return cryptAes128Cbc(Cipher.ENCRYPT_MODE, contentKey, aesKey, kidBytes)
+        return cryptAesCbc(Cipher.ENCRYPT_MODE, contentKey, communicationKey, kidBytes)
     }
 
     @JvmStatic
@@ -73,7 +74,7 @@ object DrmIdentifiers {
             return raw
         }
         val decoded = try {
-            Base64.getDecoder().decode(trimmed)
+            Base64.decode(trimmed)
         } catch (_: IllegalArgumentException) {
             null
         }
@@ -100,14 +101,15 @@ object DrmIdentifiers {
         communicationKey: ByteArray,
         kidBytes: ByteArray,
     ): ByteArray {
-        val aesKey = communicationKey.copyOfRange(0, minOf(16, communicationKey.size))
-        if (encrypted.size != 16 || aesKey.size != 16 || kidBytes.size != 16) {
-            throw IllegalArgumentException("Expected 16-byte AES inputs")
+        if (encrypted.size != 16 || kidBytes.size != 16 ||
+            (communicationKey.size != 16 && communicationKey.size != 32)
+        ) {
+            throw IllegalArgumentException("Expected a 16-byte ciphertext and a 16- or 32-byte communication key")
         }
-        return cryptAes128Cbc(Cipher.DECRYPT_MODE, encrypted, aesKey, kidBytes)
+        return cryptAesCbc(Cipher.DECRYPT_MODE, encrypted, communicationKey, kidBytes)
     }
 
-    private fun cryptAes128Cbc(
+    private fun cryptAesCbc(
         mode: Int,
         data: ByteArray,
         aesKey: ByteArray,

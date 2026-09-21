@@ -54,9 +54,9 @@ final class DrmIdentifiersTests: XCTestCase {
         XCTAssertEqual(16, encrypted128.count)
         XCTAssertEqual(
             keyBytes,
-            try decryptAes128CbcNoPadding(
+            try decryptAesCbcNoPadding(
                 ciphertext: encrypted128,
-                key: Data(commKey32.prefix(16)),
+                key: commKey32,
                 iv: kidBytes
             )
         )
@@ -106,6 +106,11 @@ final class DrmIdentifiersTests: XCTestCase {
     }
 
     private func decryptAes128CbcNoPadding(ciphertext: Data, key: Data, iv: Data) throws -> Data {
+        try decryptAesCbcNoPadding(ciphertext: ciphertext, key: key, iv: iv)
+    }
+
+    private func decryptAesCbcNoPadding(ciphertext: Data, key: Data, iv: Data) throws -> Data {
+        let keySize: size_t = key.count == kCCKeySizeAES256 ? size_t(kCCKeySizeAES256) : size_t(kCCKeySizeAES128)
         var output = Data(count: ciphertext.count)
         var outputLength: size_t = 0
         let status = ciphertext.withUnsafeBytes { dataBytes in
@@ -117,7 +122,7 @@ final class DrmIdentifiersTests: XCTestCase {
                             CCAlgorithm(kCCAlgorithmAES),
                             CCOptions(0),
                             keyBytes.baseAddress,
-                            kCCKeySizeAES128,
+                            keySize,
                             ivBytes.baseAddress,
                             dataBytes.baseAddress,
                             ciphertext.count,

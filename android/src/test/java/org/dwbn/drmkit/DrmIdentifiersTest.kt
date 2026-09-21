@@ -42,7 +42,7 @@ class DrmIdentifiersTest {
         val commKey = DrmIdentifiers.communicationKeyBytes("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
         val encrypted = DrmIdentifiers.encryptContentKeyForAxinom(keyBytes, commKey, kidBytes)
         assertEquals(16, encrypted.size)
-        assertArrayEquals(keyBytes, decryptAes128CbcNoPadding(encrypted, commKey, kidBytes))
+        assertArrayEquals(keyBytes, decryptAesCbcNoPadding(encrypted, commKey, kidBytes))
 
         assertEquals(
             vector.getString("adHex"),
@@ -57,7 +57,7 @@ class DrmIdentifiersTest {
         assertEquals(16, encrypted128.size)
         assertArrayEquals(
             keyBytes,
-            decryptAes128CbcNoPadding(encrypted128, commKey32.copyOfRange(0, 16), kidBytes),
+            decryptAesCbcNoPadding(encrypted128, commKey32, kidBytes),
         )
 
         val fairPlayUri = encodings.getString("fairPlayUri")
@@ -108,7 +108,7 @@ class DrmIdentifiersTest {
         DrmIdentifiers.communicationKeyBytes("not-a-key")
     }
 
-    private fun decryptAes128CbcNoPadding(
+    private fun decryptAesCbcNoPadding(
         ciphertext: ByteArray,
         key: ByteArray,
         iv: ByteArray,

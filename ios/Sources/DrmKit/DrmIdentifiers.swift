@@ -54,19 +54,19 @@ public enum DrmIdentifiers {
         keyBytes.base64EncodedString()
     }
 
-    /// AES-128-CBC without padding: first 16 bytes of the communication key, IV = KID bytes.
+    /// AES-CBC without padding, IV = KID bytes. 32-byte communication key uses AES-256; 16-byte uses AES-128.
     public static func encryptContentKeyForAxinom(
         contentKey: Data,
         communicationKey: Data,
         kidBytes: Data
     ) throws -> Data {
-        let aesKey = communicationKey.prefix(16)
-        guard contentKey.count == 16, aesKey.count == 16, kidBytes.count == 16 else {
-            throw DrmIdentifiersError.invalidArgument("Expected 16-byte AES inputs")
+        guard contentKey.count == 16, kidBytes.count == 16,
+              communicationKey.count == 16 || communicationKey.count == 32 else {
+            throw DrmIdentifiersError.invalidArgument("Expected a 16-byte content key and a 16- or 32-byte communication key")
         }
-        return try cryptAES128CBC(
+        return try cryptAESCBC(
             data: contentKey,
-            key: Data(aesKey),
+            key: communicationKey,
             iv: kidBytes,
             operation: CCOperation(kCCEncrypt)
         )
@@ -106,24 +106,33 @@ public enum DrmIdentifiers {
         communicationKey: Data,
         kidBytes: Data
     ) throws -> Data {
-        let aesKey = communicationKey.prefix(16)
-        guard encrypted.count == 16, aesKey.count == 16, kidBytes.count == 16 else {
-            throw DrmIdentifiersError.invalidArgument("Expected 16-byte AES inputs")
+        guard encrypted.count == 16, kidBytes.count == 16,
+              communicationKey.count == 16 || communicationKey.count == 32 else {
+            throw DrmIdentifiersError.invalidArgument("Expected a 16-byte ciphertext and a 16- or 32-byte communication key")
         }
-        return try cryptAES128CBC(
+        return try cryptAESCBC(
             data: encrypted,
-            key: Data(aesKey),
+            key: communicationKey,
             iv: kidBytes,
             operation: CCOperation(kCCDecrypt)
         )
     }
 
-    private static func cryptAES128CBC(
+    private static func cryptAESCBC(
         data: Data,
         key: Data,
         iv: Data,
         operation: CCOperation
     ) throws -> Data {
+        let keySize: size_t
+        switch key.count {
+        case kCCKeySizeAES128:
+            keySize = size_t(kCCKeySizeAES128)
+        case kCCKeySizeAES256:
+            keySize = size_t(kCCKeySizeAES256)
+        default:
+            throw DrmIdentifiersError.invalidArgument("Expected a 16- or 32-byte AES key")
+        }
         var output = Data(count: data.count)
         var outputLength: size_t = 0
         let status = data.withUnsafeBytes { dataBytes in
@@ -135,7 +144,7 @@ public enum DrmIdentifiers {
                             CCAlgorithm(kCCAlgorithmAES),
                             CCOptions(0),
                             keyBytes.baseAddress,
-                            kCCKeySizeAES128,
+                            keySize,
                             ivBytes.baseAddress,
                             dataBytes.baseAddress,
                             data.count,
