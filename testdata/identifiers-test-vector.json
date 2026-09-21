@@ -1,0 +1,16 @@
+{
+  "kidHex": "00112233445566778899aabbccddeeff",
+  "ivHex": "ffeeddccbbaa99887766554433221100",
+  "keyHex": "aaaabbbbccccddddeeeeffff00001111",
+  "packageUuid": "550e8400-e29b-41d4-a716-446655440000",
+  "adHex": "00112233445566778899aabbccddeeff550e8400e29b41d4a716446655440000",
+  "kdfCiphertext": "MUIFAKM6-v3rByojVyoevFEvDfOfZt9pQ2K-kf6g7LTicr7YN8pCX-MxSVazMAB_AlCMBm4aW0a2Pmfj3LGNQg137wBfBJ-vaOt0JZT3BtSpk7gq1FsgTD1sAKIBxahqko2V990oxoPM9BH1J5UuzX8Aqaotm69lOcw7Jp_PWOsobcs-ImKinRc2v_A=",
+  "encodings": {
+    "shakaKidHex": "00112233445566778899aabbccddeeff",
+    "shakaIvHex": "ffeeddccbbaa99887766554433221100",
+    "shakaKeyHex": "aaaabbbbccccddddeeeeffff00001111",
+    "fairPlayUri": "skd://00112233445566778899aabbccddeeff:ffeeddccbbaa99887766554433221100",
+    "axinomKeyId": "00112233-4455-6677-8899-aabbccddeeff",
+    "axinomKeyValue": "qqq7u8zM3d3u7v//AAAREQ=="
+  }
+}

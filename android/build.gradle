@@ -1,0 +1,83 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:9.4.1'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20'
+    }
+}
+
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
+
+// AGP 9+ provides built-in Kotlin; applying kotlin-android there fails.
+def agpMajorVersion = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0].toInteger()
+if (agpMajorVersion < 9) {
+    apply plugin: 'kotlin-android'
+}
+
+android {
+    namespace = "org.dwbn.drmkit"
+    compileSdk = 36
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 36
+        versionCode 1
+        versionName "0.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    sourceSets {
+        test {
+            resources.srcDir '../testdata'
+        }
+    }
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+}
+
+if (agpMajorVersion < 9) {
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_21
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20260814"
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                groupId = 'com.github.phiamo'
+                artifactId = 'drm-kit'
+                version = System.getenv('VERSION') ?: '0.1.0'
+            }
+        }
+    }
+}
