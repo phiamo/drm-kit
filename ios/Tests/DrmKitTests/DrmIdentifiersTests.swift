@@ -1,3 +1,4 @@
+import CommonCrypto
 import XCTest
 @testable import DrmKit
 
@@ -33,11 +34,7 @@ final class DrmIdentifiersTests: XCTestCase {
         XCTAssertEqual(16, encrypted.count)
         XCTAssertEqual(
             keyBytes,
-            try DrmIdentifiers.decryptContentKeyForAxinom(
-                encrypted: encrypted,
-                communicationKey: commKey,
-                kidBytes: kidBytes
-            )
+            try decryptAes128CbcNoPadding(ciphertext: encrypted, key: commKey, iv: kidBytes)
         )
 
         XCTAssertEqual(
@@ -57,10 +54,10 @@ final class DrmIdentifiersTests: XCTestCase {
         XCTAssertEqual(16, encrypted128.count)
         XCTAssertEqual(
             keyBytes,
-            try DrmIdentifiers.decryptContentKeyForAxinom(
-                encrypted: encrypted128,
-                communicationKey: Data(commKey32.prefix(16)),
-                kidBytes: kidBytes
+            try decryptAes128CbcNoPadding(
+                ciphertext: encrypted128,
+                key: Data(commKey32.prefix(16)),
+                iv: kidBytes
             )
         )
 
@@ -68,7 +65,6 @@ final class DrmIdentifiersTests: XCTestCase {
         XCTAssertFalse(encodings.fairPlayUri.contains("skd://\(kidBytes.base64EncodedString())"))
         XCTAssertEqual("00112233-4455-6677-8899-aabbccddeeff", encodings.axinomKeyId)
         XCTAssertNotEqual("33221100-5544-7766-8899-aabbccddeeff", encodings.axinomKeyId)
-        XCTAssertFalse(vector.kdfCiphertext.isEmpty)
     }
 
     func testHexAndUriAreLowercase() throws {
@@ -107,6 +103,36 @@ final class DrmIdentifiersTests: XCTestCase {
         let fairPlayUri: String
         let axinomKeyId: String
         let axinomKeyValue: String
+    }
+
+    private func decryptAes128CbcNoPadding(ciphertext: Data, key: Data, iv: Data) throws -> Data {
+        var output = Data(count: ciphertext.count)
+        var outputLength: size_t = 0
+        let status = ciphertext.withUnsafeBytes { dataBytes in
+            key.withUnsafeBytes { keyBytes in
+                iv.withUnsafeBytes { ivBytes in
+                    output.withUnsafeMutableBytes { outputBytes in
+                        CCCrypt(
+                            CCOperation(kCCDecrypt),
+                            CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(0),
+                            keyBytes.baseAddress,
+                            kCCKeySizeAES128,
+                            ivBytes.baseAddress,
+                            dataBytes.baseAddress,
+                            ciphertext.count,
+                            outputBytes.baseAddress,
+                            ciphertext.count,
+                            &outputLength
+                        )
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess, outputLength == ciphertext.count else {
+            throw NSError(domain: "DrmIdentifiersTests", code: Int(status))
+        }
+        return output
     }
 
     private func loadVector() throws -> Vector {

@@ -8,6 +8,9 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class DrmIdentifiersTest {
     @Test
@@ -39,10 +42,7 @@ class DrmIdentifiersTest {
         val commKey = DrmIdentifiers.communicationKeyBytes("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
         val encrypted = DrmIdentifiers.encryptContentKeyForAxinom(keyBytes, commKey, kidBytes)
         assertEquals(16, encrypted.size)
-        assertArrayEquals(
-            keyBytes,
-            DrmIdentifiers.decryptContentKeyForAxinom(encrypted, commKey, kidBytes),
-        )
+        assertArrayEquals(keyBytes, decryptAes128CbcNoPadding(encrypted, commKey, kidBytes))
 
         assertEquals(
             vector.getString("adHex"),
@@ -57,11 +57,7 @@ class DrmIdentifiersTest {
         assertEquals(16, encrypted128.size)
         assertArrayEquals(
             keyBytes,
-            DrmIdentifiers.decryptContentKeyForAxinom(
-                encrypted128,
-                commKey32.copyOfRange(0, 16),
-                kidBytes,
-            ),
+            decryptAes128CbcNoPadding(encrypted128, commKey32.copyOfRange(0, 16), kidBytes),
         )
 
         val fairPlayUri = encodings.getString("fairPlayUri")
@@ -69,7 +65,6 @@ class DrmIdentifiersTest {
         assertFalse(fairPlayUri.contains("skd://" + Base64.getEncoder().encodeToString(kidBytes)))
         assertEquals("00112233-4455-6677-8899-aabbccddeeff", encodings.getString("axinomKeyId"))
         assertNotEquals("33221100-5544-7766-8899-aabbccddeeff", encodings.getString("axinomKeyId"))
-        assertTrue(vector.getString("kdfCiphertext").isNotEmpty())
     }
 
     @Test
@@ -99,8 +94,28 @@ class DrmIdentifiersTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
+    fun emptyHexThrows() {
+        DrmIdentifiers.hexToBytes("")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun extraLongHexThrows() {
+        DrmIdentifiers.hexToBytes("00112233445566778899aabbccddeeff00")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
     fun invalidCommunicationKeyThrows() {
         DrmIdentifiers.communicationKeyBytes("not-a-key")
+    }
+
+    private fun decryptAes128CbcNoPadding(
+        ciphertext: ByteArray,
+        key: ByteArray,
+        iv: ByteArray,
+    ): ByteArray {
+        val cipher = Cipher.getInstance("AES/CBC/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
+        return cipher.doFinal(ciphertext)
     }
 
     private fun loadVector(): JSONObject {
