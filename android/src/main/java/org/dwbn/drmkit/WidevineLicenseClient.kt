@@ -1,5 +1,6 @@
 package org.dwbn.drmkit
 
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,7 +21,7 @@ class WidevineLicenseClient(
     private val httpClient: OkHttpClient = defaultHttpClient(),
 ) {
     fun fetchToken(kidHex: String): String {
-        val url = config.tokenUrl.toHttpUrl().newBuilder()
+        val url = parseUrl(config.tokenUrl).newBuilder()
             .setQueryParameter("kid", kidHex)
             .setQueryParameter("session", config.playbackSessionId)
             .setQueryParameter("purpose", PURPOSE_STREAM)
@@ -42,7 +43,7 @@ class WidevineLicenseClient(
 
     fun acquireLicense(challenge: ByteArray, token: String): ByteArray {
         val request = Request.Builder()
-            .url(config.licenseUrl.toHttpUrl())
+            .url(parseUrl(config.licenseUrl))
             .post(challenge.toRequestBody(OCTET_STREAM))
             .header(HEADER_AXINOM_MESSAGE, token)
             .build()
@@ -51,7 +52,7 @@ class WidevineLicenseClient(
 
     fun heartbeat() {
         val request = Request.Builder()
-            .url(config.heartbeatUrl.toHttpUrl())
+            .url(parseUrl(config.heartbeatUrl))
             .post(ByteArray(0).toRequestBody(null))
             .header(HEADER_AUTHORIZATION, bearer(config.authorization))
             .header(HEADER_RENEWAL_CREDENTIAL, config.renewalCredential)
@@ -60,17 +61,22 @@ class WidevineLicenseClient(
     }
 
     fun provision(url: String, signedRequest: ByteArray): ByteArray {
-        val json = ByteArray(JSON_PREFIX.size + signedRequest.size + JSON_SUFFIX.size).also { dest ->
-            JSON_PREFIX.copyInto(dest)
-            signedRequest.copyInto(dest, JSON_PREFIX.size)
-            JSON_SUFFIX.copyInto(dest, JSON_PREFIX.size + signedRequest.size)
-        }
+        val provisionUrl = parseUrl(url).newBuilder()
+            .setQueryParameter("signedRequest", String(signedRequest, Charsets.UTF_8))
+            .build()
         val request = Request.Builder()
-            .url(url)
-            .post(json.toRequestBody(JSON))
+            .url(provisionUrl)
+            .post(ByteArray(0).toRequestBody(null))
             .build()
         return execute(request, CallKind.PROVISION) { it }
     }
+
+    private fun parseUrl(url: String): HttpUrl =
+        try {
+            url.toHttpUrl()
+        } catch (_: IllegalArgumentException) {
+            throw DrmKitException(DrmPlaybackError.unknown)
+        }
 
     private fun <T> execute(
         request: Request,
@@ -112,9 +118,6 @@ class WidevineLicenseClient(
         const val HEADER_AXINOM_ERROR_CODE = "X-AxDrm-ErrorCode"
 
         private val OCTET_STREAM = "application/octet-stream".toMediaType()
-        private val JSON = "application/json; charset=utf-8".toMediaType()
-        private val JSON_PREFIX = "{\"signedRequest\":\"".toByteArray(Charsets.UTF_8)
-        private val JSON_SUFFIX = "\"}".toByteArray(Charsets.UTF_8)
 
         fun defaultHttpClient(): OkHttpClient =
             OkHttpClient.Builder()

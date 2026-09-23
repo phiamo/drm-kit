@@ -27,8 +27,9 @@ class WidevineMediaDrmCallback(
         }
         return try {
             MediaDrmCallback.Response(client.provision(url, request.data))
-        } catch (e: DrmKitException) {
-            session.report(e.error)
+        } catch (e: Exception) {
+            val error = if (e is DrmKitException) e.error else DrmPlaybackError.unknown
+            session.report(error)
             throw drmCallbackException(url, e)
         }
     }
@@ -49,8 +50,9 @@ class WidevineMediaDrmCallback(
             val license = client.acquireLicense(challenge, token)
             session.rememberChallenge(challenge)
             MediaDrmCallback.Response(license)
-        } catch (e: DrmKitException) {
-            session.report(e.error)
+        } catch (e: Exception) {
+            val error = if (e is DrmKitException) e.error else DrmPlaybackError.unknown
+            session.report(error)
             throw drmCallbackException(session.licenseUrl, e)
         }
     }

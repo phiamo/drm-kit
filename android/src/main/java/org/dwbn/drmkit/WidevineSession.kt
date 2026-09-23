@@ -16,6 +16,12 @@ class WidevineSession(
     private val scheduler: TaskScheduler = NativeTaskScheduler(),
     private val onError: ErrorListener,
 ) {
+    /**
+     * Host-built playback endpoints and credentials.
+     *
+     * [tokenUrl], [licenseUrl], and [heartbeatUrl] must be absolute; drm-kit does not invent
+     * `/api/v2`. [authorization] is the current SSO access token (drm-kit does not refresh it).
+     */
     data class Config(
         val tokenUrl: String,
         val licenseUrl: String,
@@ -58,6 +64,10 @@ class WidevineSession(
 
     fun createMediaDrmCallback(): MediaDrmCallback = callback
 
+    /**
+     * Starts stream-limit timers. The host must call this when playback starts.
+     * [StreamLimit.MODE_NONE] schedules nothing; CDM license requests still fetch a token.
+     */
     fun start() {
         if (released.get()) return
         synchronized(scheduled) {
@@ -76,6 +86,7 @@ class WidevineSession(
                         scheduled += scheduler.scheduleAtFixedRate(period, Runnable { heartbeatOnTimer() })
                     }
                 }
+                else -> report(DrmPlaybackError.unknown)
             }
         }
     }
@@ -96,20 +107,25 @@ class WidevineSession(
     }
 
     internal fun throwIfBlocked() {
-        val blocked = terminalError.get()
-        if (blocked == DrmPlaybackError.blockedByStreamLimit) {
-            throw drmCallbackException(config.licenseUrl, DrmKitException(blocked))
+        val terminal = terminalError.get()
+        if (terminal != null) {
+            throw drmCallbackException(config.licenseUrl, DrmKitException(terminal))
         }
         if (released.get()) {
+            onError.onError(DrmPlaybackError.unknown)
             throw drmCallbackException(config.licenseUrl, DrmKitException(DrmPlaybackError.unknown))
         }
     }
 
     internal fun report(error: DrmPlaybackError) {
-        if (error == DrmPlaybackError.blockedByStreamLimit) {
+        if (released.get()) return
+        if (error.isTerminal) {
             if (terminalError.compareAndSet(null, error)) {
-                onError.onError(error)
-                release()
+                try {
+                    onError.onError(error)
+                } finally {
+                    release()
+                }
             }
             return
         }
@@ -125,6 +141,8 @@ class WidevineSession(
             client.acquireLicense(challenge, token)
         } catch (e: DrmKitException) {
             report(e.error)
+        } catch (_: Exception) {
+            report(DrmPlaybackError.unknown)
         }
     }
 
@@ -134,6 +152,13 @@ class WidevineSession(
             client.heartbeat()
         } catch (e: DrmKitException) {
             report(e.error)
+        } catch (_: Exception) {
+            report(DrmPlaybackError.unknown)
         }
     }
 }
+
+private val DrmPlaybackError.isTerminal: Boolean
+    get() = this == DrmPlaybackError.blockedByStreamLimit ||
+        this == DrmPlaybackError.notEntitled ||
+        this == DrmPlaybackError.expired

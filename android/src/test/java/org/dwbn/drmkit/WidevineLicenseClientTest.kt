@@ -47,6 +47,25 @@ class WidevineLicenseClientTest {
     }
 
     @Test
+    fun invalidUrlIsUnknown() {
+        val config = WidevineSession.Config(
+            tokenUrl = "not-a-url",
+            licenseUrl = "also-bad",
+            heartbeatUrl = "still-bad",
+            playbackSessionId = "sess-1",
+            renewalCredential = "cred",
+            authorization = "tok",
+            streamLimit = StreamLimit(StreamLimit.MODE_NONE, 0, 0),
+        )
+        try {
+            WidevineLicenseClient(config).fetchToken("00112233445566778899aabbccddeeff")
+            fail("expected DrmKitException")
+        } catch (e: DrmKitException) {
+            assertEquals(DrmPlaybackError.unknown, e.error)
+        }
+    }
+
+    @Test
     fun heartbeat409IsBlocked() {
         server.enqueue(MockResponse().setResponseCode(409))
         try {

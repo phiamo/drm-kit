@@ -136,9 +136,22 @@ class WidevineSessionTest {
 
     @Test
     fun longLicenseRenewsAtConfiguredInterval() {
+        enqueueToken("token-one")
+        enqueueLicense("lic-one")
+        enqueueToken("token-renew")
+        enqueueLicense("lic-renew")
         val scheduler = FakeScheduler()
-        session(StreamLimit(StreamLimit.MODE_LONG_LICENSE, 11, 0), scheduler).start()
+        val fixture = widevineKeyIdProtobuf(VECTOR_KID)
+        val session = session(StreamLimit(StreamLimit.MODE_LONG_LICENSE, 11, 0), scheduler)
+        session.start()
         assertEquals(listOf(11L), scheduler.periods)
+        session.createMediaDrmCallback().executeKeyRequest(C.WIDEVINE_UUID, keyRequest(fixture))
+        server.takeRequest()
+        server.takeRequest()
+        scheduler.runPending()
+        assertTokenRequest(server.takeRequest(), VECTOR_KID)
+        assertLicenseRequest(server.takeRequest(), fixture, "token-renew")
+        session.release()
     }
 
     @Test
@@ -278,14 +291,61 @@ class WidevineSessionTest {
     @Test
     fun errorsAndExceptionsDoNotContainTokenBytes() {
         val jwt = "eyJhbGciOiJIUzI1NiJ9.payload.signature"
+        val licenseBody = "secret-license-body"
         enqueueToken(jwt)
-        enqueueLicense("secret-license-body")
+        enqueueLicense(licenseBody)
+        server.enqueue(MockResponse().setResponseCode(500))
         val session = session(StreamLimit(StreamLimit.MODE_NONE, 300, 0))
-        session.createMediaDrmCallback().executeKeyRequest(
+        val callback = session.createMediaDrmCallback()
+        val fixture = widevineKeyIdProtobuf(VECTOR_KID)
+        callback.executeKeyRequest(C.WIDEVINE_UUID, keyRequest(fixture))
+        try {
+            callback.executeKeyRequest(C.WIDEVINE_UUID, keyRequest(fixture))
+            fail("expected DRM callback failure")
+        } catch (e: Exception) {
+            assertFalse(containsSecret(e, jwt))
+            assertFalse(containsSecret(e, licenseBody))
+        }
+        errors.forEach { error ->
+            assertFalse(error.name.contains(jwt))
+            assertFalse(error.name.contains(licenseBody))
+            assertFalse(error.toString().contains(jwt))
+            assertFalse(error.toString().contains(licenseBody))
+        }
+    }
+
+    @Test
+    fun provisionPostsSignedRequestQueryAndReturnsBody() {
+        val signed = "signed-challenge".toByteArray()
+        server.enqueue(MockResponse().setBody("provision-response"))
+        val session = session(StreamLimit(StreamLimit.MODE_NONE, 300, 0))
+        val response = session.createMediaDrmCallback().executeProvisionRequest(
             C.WIDEVINE_UUID,
-            keyRequest(widevineKeyIdProtobuf(VECTOR_KID)),
+            ExoMediaDrm.ProvisionRequest(signed, server.url("/provision").toString()),
         )
-        errors.forEach { assertFalse(it.name.contains(jwt)) }
+        assertArrayEquals("provision-response".toByteArray(), response.data)
+        val recorded = server.takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/provision", recorded.requestUrl!!.encodedPath)
+        assertEquals("signed-challenge", recorded.requestUrl!!.queryParameter("signedRequest"))
+        assertEquals(0, recorded.body.size)
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
+    fun provisionEmptyUrlIsUnknown() {
+        val session = session(StreamLimit(StreamLimit.MODE_NONE, 300, 0))
+        try {
+            session.createMediaDrmCallback().executeProvisionRequest(
+                C.WIDEVINE_UUID,
+                ExoMediaDrm.ProvisionRequest(byteArrayOf(0x01), ""),
+            )
+            fail("expected DRM callback failure")
+        } catch (e: Exception) {
+            assertEquals(DrmPlaybackError.unknown, errorFrom(e))
+        }
+        assertEquals(listOf(DrmPlaybackError.unknown), errors)
+        assertEquals(0, server.requestCount)
     }
 
     private fun expectError(expected: DrmPlaybackError) {
@@ -383,6 +443,17 @@ class WidevineSessionTest {
                 current = current.cause
             }
             return DrmPlaybackError.unknown
+        }
+
+        fun containsSecret(error: Throwable, secret: String): Boolean {
+            var current: Throwable? = error
+            while (current != null) {
+                if (current.message?.contains(secret) == true || current.toString().contains(secret)) {
+                    return true
+                }
+                current = current.cause
+            }
+            return false
         }
     }
 }
