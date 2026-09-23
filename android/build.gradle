@@ -27,8 +27,11 @@ android {
         minSdkVersion 24
         targetSdkVersion 36
         versionCode 1
-        versionName "0.1.0"
+        versionName "0.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    testOptions {
+        unitTests.returnDefaultValues = true
     }
     buildTypes {
         release {
@@ -59,14 +62,18 @@ if (agpMajorVersion < 9) {
     }
 }
 
+
 repositories {
     google()
     mavenCentral()
 }
 
 dependencies {
+    api "androidx.media3:media3-exoplayer:1.11.1"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20260814"
+    testImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
 }
 
 afterEvaluate {
@@ -76,7 +83,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.phiamo'
                 artifactId = 'drm-kit'
-                version = System.getenv('VERSION') ?: '0.1.0'
+                version = System.getenv('VERSION') ?: '0.2.0'
             }
         }
     }
