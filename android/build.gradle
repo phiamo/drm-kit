@@ -27,7 +27,7 @@ android {
         minSdkVersion 24
         targetSdkVersion 36
         versionCode 1
-        versionName "0.2.0"
+        versionName "0.2.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     testOptions {
@@ -83,7 +83,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.phiamo'
                 artifactId = 'drm-kit'
-                version = System.getenv('VERSION') ?: '0.2.0'
+                version = System.getenv('VERSION') ?: '0.2.1'
             }
         }
     }
