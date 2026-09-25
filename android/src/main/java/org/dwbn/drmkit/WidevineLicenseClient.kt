@@ -16,7 +16,7 @@ internal class DrmKitException(val error: DrmPlaybackError) : RuntimeException(e
  * OkHttp client for `/drm-token`, Axinom AcquireLicense, and playback-session heartbeat.
  * Never logs tokens, JWTs, entitlement messages, or license bodies.
  */
-class WidevineLicenseClient(
+class WidevineLicenseClient @JvmOverloads constructor(
     private val config: WidevineSession.Config,
     private val httpClient: OkHttpClient = defaultHttpClient(),
 ) {

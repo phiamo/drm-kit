@@ -77,59 +77,108 @@ internal fun drmCallbackException(url: String, cause: Throwable): Exception {
 }
 
 /**
- * First 16-byte Widevine `key_id` in KeyRequest bytes (PSSH protobuf or raw 16-byte fixture).
+ * Content key ID for `/drm-token?kid=`.
+ *
+ * Same 32-hex as HLS `#EXT-X-KEY` / `content_key.kid`. A Widevine LicenseRequest
+ * field 1 is ClientIdentification and often contains a 16-byte blob — that is not the KID.
  */
 internal object WidevineKeyIds {
     private val PSSH = byteArrayOf(0x70, 0x73, 0x73, 0x68) // 'pssh'
+    private val WIDEVINE_SYSTEM_ID = byteArrayOf(
+        0xed.toByte(), 0xef.toByte(), 0x8b.toByte(), 0xa9.toByte(),
+        0x79, 0xd6.toByte(), 0x4a, 0xce.toByte(),
+        0xa3.toByte(), 0xc8.toByte(), 0x27, 0xdc.toByte(),
+        0xd5.toByte(), 0x1d, 0x21, 0xed.toByte(),
+    )
 
     fun firstKeyId(data: ByteArray): ByteArray? {
         if (data.size == 16) {
             return data.copyOf()
         }
-        return findInProtobuf(data, 0, data.size) ?: parsePssh(data, 0, data.size)
+        findWidevinePsshKeyId(data)?.let { return it }
+        return fromContentProtobuf(data, 0, data.size)
     }
 
-    private fun findInProtobuf(data: ByteArray, start: Int, end: Int): ByteArray? {
+    private fun findWidevinePsshKeyId(data: ByteArray): ByteArray? {
+        var i = 0
+        while (i + 16 <= data.size) {
+            if (regionEquals(data, i, WIDEVINE_SYSTEM_ID)) {
+                val boxStart = i - 12
+                if (boxStart >= 0) {
+                    parsePssh(data, boxStart, data.size)?.let { return it }
+                }
+            }
+            i++
+        }
+        i = 4
+        while (i + 4 <= data.size) {
+            if (regionEquals(data, i, PSSH)) {
+                parsePssh(data, i - 4, data.size)?.let { return it }
+            }
+            i++
+        }
+        return null
+    }
+
+    /**
+     * Prefer protobuf field 2 (ContentIdentification / CencId.key_id / WidevineCencHeader.key_id).
+     * Do not walk field 1 unless it is a PSSH box — LicenseRequest field 1 is client_id.
+     */
+    private fun fromContentProtobuf(data: ByteArray, start: Int, end: Int): ByteArray? {
         var i = start
+        var field1Start = -1
+        var field1End = -1
+        var field2Start = -1
+        var field2End = -1
         while (i < end) {
-            val tagResult = readVarint(data, i, end) ?: return null
+            val tagResult = readVarint(data, i, end) ?: break
             i = tagResult.second
             val field = (tagResult.first ushr 3).toInt()
             when ((tagResult.first and 7).toInt()) {
-                0 -> i = readVarint(data, i, end)?.second ?: return null
+                0 -> i = readVarint(data, i, end)?.second ?: break
                 1 -> {
-                    if (i + 8 > end) return null
+                    if (i + 8 > end) break
                     i += 8
                 }
                 2 -> {
-                    val lenResult = readVarint(data, i, end) ?: return null
+                    val lenResult = readVarint(data, i, end) ?: break
                     i = lenResult.second
                     val length = lenResult.first.toInt()
-                    if (length < 0 || i + length > end) return null
-                    val payloadStart = i
-                    val payloadEnd = i + length
-                    if (field == 2 && length == 16) {
-                        return data.copyOfRange(payloadStart, payloadEnd)
+                    if (length < 0 || i + length > end) break
+                    if (field == 1 && field1Start < 0) {
+                        field1Start = i
+                        field1End = i + length
                     }
-                    parsePssh(data, payloadStart, payloadEnd)?.let { return it }
-                    findInProtobuf(data, payloadStart, payloadEnd)?.let { return it }
-                    i = payloadEnd
+                    if (field == 2 && field2Start < 0) {
+                        field2Start = i
+                        field2End = i + length
+                    }
+                    i += length
                 }
                 5 -> {
-                    if (i + 4 > end) return null
+                    if (i + 4 > end) break
                     i += 4
                 }
-                else -> return null
+                else -> break
             }
+        }
+        if (field2Start >= 0) {
+            if (field2End - field2Start == 16) {
+                return data.copyOfRange(field2Start, field2End)
+            }
+            parsePssh(data, field2Start, field2End)?.let { return it }
+            return fromContentProtobuf(data, field2Start, field2End)
+        }
+        if (field1Start >= 0) {
+            parsePssh(data, field1Start, field1End)?.let { return it }
+            return fromContentProtobuf(data, field1Start, field1End)
         }
         return null
     }
 
     private fun parsePssh(data: ByteArray, start: Int, end: Int): ByteArray? {
         if (end - start < 32) return null
-        if (!(data[start + 4] == PSSH[0] && data[start + 5] == PSSH[1] &&
-                data[start + 6] == PSSH[2] && data[start + 7] == PSSH[3])
-        ) {
+        if (!regionEquals(data, start + 4, PSSH)) {
             return null
         }
         val size = ByteBuffer.wrap(data, start, 4).order(ByteOrder.BIG_ENDIAN).int
@@ -149,7 +198,15 @@ internal object WidevineKeyIds {
         val dataSize = ByteBuffer.wrap(data, offset, 4).order(ByteOrder.BIG_ENDIAN).int
         offset += 4
         if (dataSize < 0 || offset + dataSize > start + size) return null
-        return findInProtobuf(data, offset, offset + dataSize)
+        return fromContentProtobuf(data, offset, offset + dataSize)
+    }
+
+    private fun regionEquals(data: ByteArray, offset: Int, needle: ByteArray): Boolean {
+        if (offset < 0 || offset + needle.size > data.size) return false
+        for (index in needle.indices) {
+            if (data[offset + index] != needle[index]) return false
+        }
+        return true
     }
 
     private fun readVarint(data: ByteArray, start: Int, end: Int): Pair<Long, Int>? {
