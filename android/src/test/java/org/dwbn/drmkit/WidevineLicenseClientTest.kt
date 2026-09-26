@@ -54,7 +54,7 @@ class WidevineLicenseClientTest {
             heartbeatUrl = "still-bad",
             playbackSessionId = "sess-1",
             renewalCredential = "cred",
-            authorization = "tok",
+            authorization = { "tok" },
             streamLimit = StreamLimit(StreamLimit.MODE_NONE, 0, 0),
         )
         try {
@@ -76,14 +76,27 @@ class WidevineLicenseClientTest {
         }
     }
 
-    private fun client(): WidevineLicenseClient {
+    @Test
+    fun eachRequestReadsTheCurrentAccessToken() {
+        var token = "first"
+        server.enqueue(MockResponse())
+        server.enqueue(MockResponse())
+        val client = client { token }
+        client.heartbeat()
+        token = "refreshed"
+        client.heartbeat()
+        assertEquals("Bearer first", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer refreshed", server.takeRequest().getHeader("Authorization"))
+    }
+
+    private fun client(accessToken: () -> String = { "tok" }): WidevineLicenseClient {
         val config = WidevineSession.Config(
             tokenUrl = server.url("/drm-token").toString(),
             licenseUrl = server.url("/AcquireLicense").toString(),
             heartbeatUrl = server.url("/heartbeat").toString(),
             playbackSessionId = "sess-1",
             renewalCredential = "cred",
-            authorization = "tok",
+            authorization = accessToken,
             streamLimit = StreamLimit(StreamLimit.MODE_NONE, 0, 0),
         )
         return WidevineLicenseClient(config)

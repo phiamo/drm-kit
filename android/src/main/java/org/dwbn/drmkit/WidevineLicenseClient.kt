@@ -29,7 +29,7 @@ class WidevineLicenseClient @JvmOverloads constructor(
         val request = Request.Builder()
             .url(url)
             .get()
-            .header(HEADER_AUTHORIZATION, bearer(config.authorization))
+            .header(HEADER_AUTHORIZATION, bearer(config.authorization()))
             .header(HEADER_RENEWAL_CREDENTIAL, config.renewalCredential)
             .build()
         return execute(request, CallKind.TOKEN) { body ->
@@ -54,7 +54,7 @@ class WidevineLicenseClient @JvmOverloads constructor(
         val request = Request.Builder()
             .url(parseUrl(config.heartbeatUrl))
             .post(ByteArray(0).toRequestBody(null))
-            .header(HEADER_AUTHORIZATION, bearer(config.authorization))
+            .header(HEADER_AUTHORIZATION, bearer(config.authorization()))
             .header(HEADER_RENEWAL_CREDENTIAL, config.renewalCredential)
             .build()
         execute(request, CallKind.HEARTBEAT) { }

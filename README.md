@@ -4,7 +4,7 @@ Shared DRM identifiers and Android Widevine session logic for the DWBN Awareness
 
 Public repo: [phiamo/drm-kit](https://github.com/phiamo/drm-kit). Work DRM stories on `feature/vod-drm` (merge `main` first). Commits name the story.
 
-**Now (`v0.2.1`):** `DrmIdentifiers` plus an Android `WidevineSession` (custom Media3 `MediaDrmCallback`, native token/license/heartbeat, stream-limit timers). `WidevineKeyIds` reads the content KID from PSSH / LicenseRequest content_id, not ClientIdentification. Do not invent a second KID mapping.
+**Now (`v0.3.0`):** `DrmIdentifiers` plus an Android `WidevineSession` (custom Media3 `MediaDrmCallback`, native token/license/heartbeat, stream-limit timers). `WidevineKeyIds` reads the content KID from PSSH / LicenseRequest content_id, not ClientIdentification. Do not invent a second KID mapping. `WidevineSession.Config.authorization` is a `() -> String` read on every request (0.3.0 breaking change), so pass the host token getter, not a snapshot.
 
 ### KID for `/drm-token`
 
@@ -29,13 +29,13 @@ The **host app** that needs DRM adds this library. The Capacitor video and playl
 iOS ≥ 18:
 
 ```swift
-.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.2.1")
+.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.3.0")
 ```
 
 Android, minSdk 24:
 
 ```gradle
-implementation 'com.github.phiamo:drm-kit:0.2.1'
+implementation 'com.github.phiamo:drm-kit:0.3.0'
 ```
 
 Plugins never pin this tag. During DRM work the Awareness app pins plugins to `#feature/vod-drm` and, from Story 57.6, pins this library by tag.

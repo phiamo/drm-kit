@@ -20,7 +20,8 @@ class WidevineSession(
      * Host-built playback endpoints and credentials.
      *
      * [tokenUrl], [licenseUrl], and [heartbeatUrl] must be absolute; drm-kit does not invent
-     * `/api/v2`. [authorization] is the current SSO access token (drm-kit does not refresh it).
+     * `/api/v2`. [authorization] returns the current SSO access token and is read on every
+     * request, so a host refresh reaches long sessions (drm-kit does not refresh it itself).
      */
     data class Config(
         val tokenUrl: String,
@@ -28,7 +29,7 @@ class WidevineSession(
         val heartbeatUrl: String,
         val playbackSessionId: String,
         val renewalCredential: String,
-        val authorization: String,
+        val authorization: () -> String,
         val streamLimit: StreamLimit,
     )
 

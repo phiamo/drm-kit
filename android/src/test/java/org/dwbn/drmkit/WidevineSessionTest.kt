@@ -373,7 +373,7 @@ class WidevineSessionTest {
             heartbeatUrl = server.url("/playback-sessions/sess-1/heartbeat").toString(),
             playbackSessionId = "sess-1",
             renewalCredential = "renew-cred",
-            authorization = "access-token",
+            authorization = { "access-token" },
             streamLimit = streamLimit,
         )
         return WidevineSession(
