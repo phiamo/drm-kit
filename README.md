@@ -1,58 +1,112 @@
 # drm-kit
 
-Shared DRM identifiers and Android Widevine session logic for the DWBN Awareness app. Swift package + Kotlin Android library. No Capacitor dependency.
+DRM building blocks for native players: an Android **Widevine session** for Media3 (license, token, renewal, heartbeat and stream limits), plus **DRM identifier** helpers for Android and iOS. It's a Kotlin Android library and a Swift package, with no Capacitor dependency.
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W8V527Q5YX)
+[![JitPack](https://jitpack.io/v/phiamo/drm-kit.svg)](https://jitpack.io/#phiamo/drm-kit)
+[![CI](https://img.shields.io/github/actions/workflow/status/phiamo/drm-kit/ci.yml?style=flat-square)](https://github.com/phiamo/drm-kit/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 
-Public repo: [phiamo/drm-kit](https://github.com/phiamo/drm-kit). Work DRM stories on `feature/vod-drm` (merge `main` first). Commits name the story.
+## Part of the DWBN media stack
 
-**Now (`v0.3.0`):** `DrmIdentifiers` plus an Android `WidevineSession` (custom Media3 `MediaDrmCallback`, native token/license/heartbeat, stream-limit timers). `WidevineKeyIds` reads the content KID from PSSH / LicenseRequest content_id, not ClientIdentification. Do not invent a second KID mapping. `WidevineSession.Config.authorization` is a `() -> String` read on every request (0.3.0 breaking change), so pass the host token getter, not a snapshot.
+| | Project | What it does |
+|---|---|---|
+| 🎵 | [**capacitor-plugin-playlist**](https://github.com/phiamo/capacitor-plugin-playlist) · [`@dwbn/capacitor-plugin-playlist`](https://www.npmjs.com/package/@dwbn/capacitor-plugin-playlist) | Background audio playlists, lock screen, audio↔video handoff |
+| 🎬 | [**capacitor-video-player**](https://github.com/phiamo/capacitor-video-player) · [`@dwbn/capacitor-video-player`](https://www.npmjs.com/package/@dwbn/capacitor-video-player) | Native fullscreen video with Media3 / AVPlayer, PiP, Chromecast and subtitles |
+| 🔐 | **drm-kit** (this repo) · Swift Package Manager / JitPack | Widevine session and DRM identifiers that the host app plugs into both plugins |
 
-### KID for `/drm-token`
+The two plugins never depend on drm-kit. Each exposes a small provider hook (`AudioDrm.setProvider`, `VideoDrm.setProvider`). The **host app** adds drm-kit and registers one session class for both. Without DRM, the plugins behave exactly as before. The [audio ↔ video handoff guide](https://github.com/phiamo/capacitor-plugin-playlist/blob/main/docs/video-handoff.md#handoff-with-drm) shows all three working together.
 
-`kid` must be the 32-hex `content_key.kid` (same bytes as HLS `#EXT-X-KEY` / Shaka `keyId`). Backend `TokenService` looks that hex up; anything else is `403 Unknown content key`.
+## Status
 
-| Surface | KID source | Status |
-| --- | --- | --- |
-| Web PWA (`web-drm-hls.ts`) | hls.js `keyContext.keyId` | Correct |
-| Catalog Twig (`web-drm-hls.js`) | same HLS `keyId` | Correct |
-| Android (`WidevineKeyIds.firstKeyId`) | Widevine PSSH / LicenseRequest **content_id**, never ClientIdentification | Fixed in this tree — do not take the first protobuf field 2 of length 16 (that is often a 16-byte client blob) |
-| iOS FairPlay (`v0.3.0`) | HLS `skd://kid:iv` via `DrmIdentifiers.fairPlayUri` — not the SPC blob | Not implemented yet; same hex as web |
+| | Android | iOS |
+|---|---|---|
+| `DrmIdentifiers` (hex, UUID, FairPlay URI, Axinom key id/value) | ✅ | ✅ |
+| Widevine session for Media3 (`WidevineSession`) | ✅ 0.3.0 | — |
+| FairPlay (`AVContentKeySession`) | — | planned |
+| Offline / persistable keys | planned | planned |
 
-**Later (same repo, later tags):** FairPlay `AVContentKeySession` (`v0.3.0`, Story 58.2), offline / persistable keys (`v0.4.0` / `v0.5.0`, Epic 59). `1.0.0` waits for the DRM release.
+Current release: **0.3.0**. `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 18.
 
-## Consume
+## Install
 
-The **host app** that needs DRM adds this library. The Capacitor video and playlist plugins do **not** depend on it: without `drm` they behave as today. With `drm`, the host registers a provider implemented with this library.
+drm-kit is not on npm. Apps pull it straight from the git tags.
 
-- Android: `implementation` in `android/app/build.gradle` (not the plugin).
-- iOS: SPM on the **App** target. Do not add it to plugin `Package.swift` or to `CapApp-SPM` (Capacitor regenerates that file).
+**Android**: [JitPack](https://jitpack.io/#phiamo/drm-kit). Add it to the **app** module (`android/app/build.gradle`), not to a plugin:
 
-iOS ≥ 18:
+```gradle
+repositories { maven { url 'https://jitpack.io' } }
+dependencies { implementation 'com.github.phiamo:drm-kit:0.3.0' }
+```
+
+**iOS**: Swift Package Manager. Add it to the **App** target in Xcode (File → Add Package Dependencies). Don't add it to a plugin's `Package.swift` or to `CapApp-SPM`, because Capacitor regenerates that file:
 
 ```swift
 .package(url: "https://github.com/phiamo/drm-kit.git", from: "0.3.0")
 ```
 
-Android, minSdk 24:
+## Usage
 
-```gradle
-implementation 'com.github.phiamo:drm-kit:0.3.0'
+One session class serves both Capacitor plugins. It wraps `WidevineSession` and hands its `MediaDrmCallback` to Media3:
+
+```java
+@UnstableApi
+public final class AppWidevineSession implements AudioDrmSession, VideoDrmSession {
+  private final WidevineSession session;
+  private final DrmSessionManager drmSessionManager;
+
+  public AppWidevineSession(JSObject drm, Consumer<String> onError) {
+    WidevineSession.Config config = new WidevineSession.Config(
+      Api.tokenUrl(),                                  // absolute URLs, built by the app
+      drm.getString("widevineLicenseUrl"),
+      Api.heartbeatUrl(drm.getString("playbackSessionId")),
+      drm.getString("playbackSessionId"),
+      drm.getString("renewalCredential"),
+      () -> Auth.currentAccessToken(),                 // read on every request
+      StreamLimits.from(drm.getJSObject("streamLimit")) // mode + renewal/heartbeat intervals
+    );
+    session = new WidevineSession(config, new WidevineLicenseClient(config),
+      new WidevineSession.NativeTaskScheduler(), error -> onError.accept(error.name()));
+    drmSessionManager = new DefaultDrmSessionManager.Builder()
+      .setUuidAndExoMediaDrmProvider(C.WIDEVINE_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+      .setMultiSession(true)
+      .build(session.createMediaDrmCallback());
+  }
+
+  @Override public void applyDrm(MediaItem.Builder b) {
+    b.setDrmConfiguration(new MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID).build());
+  }
+  @Override public DrmSessionManager getDrmSessionManager() { return drmSessionManager; }
+  @Override public void start() { session.start(); }       // starts renewal / heartbeat timers
+  @Override public void release() { session.release(); }   // leave the DrmSessionManager to ExoPlayer
+}
 ```
 
-Plugins never pin this tag. During DRM work the Awareness app pins plugins to `#feature/vod-drm` and, from Story 57.6, pins this library by tag.
+`Api`, `Auth` and `StreamLimits` stand for your own app code. `StreamLimits.from` builds a `StreamLimit(mode, renewalIntervalSeconds, heartbeatIntervalSeconds)` and falls back to `StreamLimit.MODE_NONE`.
 
-## Tests
+Register the session class once in your `Application`:
 
-Vector: `testdata/identifiers-test-vector.json`. Tests ignore `kdfCiphertext`.
-
-Android Widevine tests use OkHttp MockWebServer (JVM, no real CDM, no decrypt).
-
-```bash
-cd android && ./gradlew test
-xcodebuild test -scheme DrmKit -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5'
+```java
+AudioDrm.setProvider(AppWidevineSession::new);
+VideoDrm.setProvider(AppWidevineSession::new);
 ```
 
-CI (`.github/workflows/ci.yml`) is those two jobs on `main` / `feature/vod-drm` / tags. **No device lab, no decrypt.** iPhone 16 Simulator OS 18.5 is unit-only — **never FairPlay**. Android `./gradlew test` is JVM.
+Errors reach the plugins as one of `blockedByStreamLimit`, `notEntitled`, `expired`, `network` or `unknown` (`DrmPlaybackError`). Don't auto-retry `blockedByStreamLimit`. The token getter is called for every request, so a token your app refreshes also reaches long sessions. drm-kit never refreshes tokens itself (breaking change in 0.3.0).
 
-Client DRM playback, stream-cap, and FairPlay-on-device are **manual-before-tag**. Floors: USB iOS 18.x physical (not the SE on 26.5.2; not the simulator); Android API 24–28 = AVD `DRM_QA_API28` (`ANDROID_AVD_HOME=$HOME/.config/.android/avd`). Pixel 7a is Widevine L1.
+Plugin-side details: [playlist DRM](https://github.com/phiamo/capacitor-plugin-playlist/blob/main/docs/drm.md) · [video DRM](https://github.com/phiamo/capacitor-video-player/blob/main/docs/drm.md).
+
+## Documentation
+
+| | |
+|---|---|
+| [Key IDs and identifiers](./docs/identifiers.md) | Which KID to send to `/drm-token` on each platform, and `DrmIdentifiers` |
+| [Testing](./docs/testing.md) | Unit tests, CI, and the manual device matrix before a tag |
+
+## Contributing
+
+Work on DRM happens on `feature/vod-drm` (merge `main` first). Tag releases as `vX.Y.Z`: JitPack and SPM both build from the tag.
+
+## License
+
+[MIT](./LICENSE) © Philipp Mohrenweiser. Built for the DWBN apps.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W8V527Q5YX)
