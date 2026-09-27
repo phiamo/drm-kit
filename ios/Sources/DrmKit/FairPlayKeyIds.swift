@@ -26,7 +26,7 @@ public enum FairPlayKeyIds {
         guard let kidHex = kidHex(parts[0]) else { return nil }
         var ivHex: String?
         if parts.count == 2 {
-            guard let iv = try? DrmIdentifiers.hexToBytes(parts[1]) else { return nil }
+            guard let iv = try? DrmIdentifiers.hexToBytes(parts[1]), iv.count == 16 else { return nil }
             ivHex = DrmIdentifiers.toHex(iv)
         }
         return KeyUri(kidHex: kidHex, ivHex: ivHex)
