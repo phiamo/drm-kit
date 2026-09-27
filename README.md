@@ -23,11 +23,11 @@ The two plugins never depend on drm-kit. Each exposes a small provider hook (`Au
 | | Android | iOS |
 |---|---|---|
 | `DrmIdentifiers` (hex, UUID, FairPlay URI, Axinom key id/value) | ✅ | ✅ |
-| Widevine session for Media3 (`WidevineSession`) | ✅ 0.3.0 | — |
+| Widevine session for Media3 (`WidevineSession`) | ✅ 0.3.1 | — |
 | FairPlay (`AVContentKeySession`) | — | planned |
 | Offline / persistable keys | planned | planned |
 
-Current release: **0.3.0**. `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 18.
+Current release: **0.3.1** (0.3.1: license renewals work — renewal requests reuse the first request's KID). `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 18.
 
 ## Install
 
@@ -37,13 +37,13 @@ drm-kit is not on npm. Apps pull it straight from the git tags.
 
 ```gradle
 repositories { maven { url 'https://jitpack.io' } }
-dependencies { implementation 'com.github.phiamo:drm-kit:0.3.0' }
+dependencies { implementation 'com.github.phiamo:drm-kit:0.3.1' }
 ```
 
 **iOS**: Swift Package Manager. Add it to the **App** target in Xcode (File → Add Package Dependencies). Don't add it to a plugin's `Package.swift` or to `CapApp-SPM`, because Capacitor regenerates that file:
 
 ```swift
-.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.3.0")
+.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.3.1")
 ```
 
 ## Usage
