@@ -21,18 +21,32 @@ jobs:
       - run: cd android && ./gradlew test
 
   test-ios:
-    runs-on: macos-15
+    name: test-ios (iOS ${{ matrix.ios }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Floor iOS 15 (iPhone 7, 15.8.5): Apple no longer serves the iOS 15 simulator runtime for
+          # download, so CI builds against the iOS 15 deployment target; run tests on the device.
+          - { ios: '15', runner: macos-15, xcode: 'latest-stable', build_only: true }
+          - { ios: '16', runner: macos-14, xcode: '16.2' }
+          - { ios: '17', runner: macos-14, xcode: '16.2' }
+          - { ios: '18', runner: macos-15, xcode: 'latest-stable' }
+          - { ios: '26', runner: macos-15, xcode: 'latest-stable' }
     steps:
       - uses: actions/checkout@v5
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
-      - name: Resolve available iPhone simulator
-        id: sim
+          xcode-version: ${{ matrix.xcode }}
+      - name: Build for the iOS ${{ matrix.ios }} deployment target
+        if: matrix.build_only
         run: |
-          DEST=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9]+ \([0-9A-F-]+\)' | head -1 | sed -E 's/ \([0-9A-F-]+\)//')
-          RUNTIME=$(xcrun simctl list runtimes | grep -oE 'iOS [0-9]+\.[0-9]+' | tail -1 | awk '{print $2}')
-          echo "name=$DEST" >> "$GITHUB_OUTPUT"
-          echo "os=$RUNTIME" >> "$GITHUB_OUTPUT"
-          echo "Using simulator: $DEST / iOS $RUNTIME"
-      - run: xcodebuild test -scheme DrmKit -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=${{ steps.sim.outputs.os }}" -skipMacroValidation
+          grep -q '.iOS(.v${{ matrix.ios }})' Package.swift
+          xcodebuild build-for-testing -scheme DrmKit -destination 'generic/platform=iOS Simulator' -skipMacroValidation
+      - name: Ensure an iOS ${{ matrix.ios }} simulator
+        if: ${{ !matrix.build_only }}
+        id: sim
+        run: .github/scripts/ios-simulator.sh "${{ matrix.ios }}" >> "$GITHUB_OUTPUT"
+      - if: ${{ !matrix.build_only }}
+        run: xcodebuild test -scheme DrmKit -destination "id=${{ steps.sim.outputs.udid }}" -skipMacroValidation
