@@ -79,6 +79,29 @@ class WidevineSessionTest {
     }
 
     @Test
+    fun renewalChallengeWithoutKidReusesTheFirstRequestsKid() {
+        enqueueToken("token-one")
+        enqueueLicense("lic-one")
+        enqueueToken("token-two")
+        enqueueLicense("lic-renewed")
+
+        val session = session(StreamLimit(StreamLimit.MODE_AXINOM_CSL, 300, 0))
+        val callback = session.createMediaDrmCallback()
+        callback.executeKeyRequest(C.WIDEVINE_UUID, keyRequest(widevineKeyIdProtobuf(VECTOR_KID)))
+
+        // MediaDrm KEY_REQUIRED renewal: references the license, no PSSH / KID (seen on Android 16 L3).
+        val renewal = byteArrayOf(0x1a, 0x04, 0x0a, 0x02, 0x01, 0x02)
+        val renewed = callback.executeKeyRequest(C.WIDEVINE_UUID, keyRequest(renewal))
+
+        assertArrayEquals("lic-renewed".toByteArray(), renewed.data)
+        server.takeRequest()
+        server.takeRequest()
+        assertTokenRequest(server.takeRequest(), VECTOR_KID)
+        assertLicenseRequest(server.takeRequest(), renewal, "token-two")
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
     fun kidParseFailureIsUnknownAndDoesNotHitNetwork() {
         val session = session(StreamLimit(StreamLimit.MODE_NONE, 300, 0))
         try {

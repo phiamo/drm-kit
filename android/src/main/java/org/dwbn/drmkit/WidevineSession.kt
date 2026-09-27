@@ -133,6 +133,7 @@ class WidevineSession @JvmOverloads constructor(
     private val released = AtomicBoolean(false)
     private val terminalError = AtomicReference<DrmPlaybackError?>(null)
     private val lastChallenge = AtomicReference<ByteArray?>(null)
+    private val lastKeyId = AtomicReference<ByteArray?>(null)
     private val trackedSessions = CopyOnWriteArrayList<TrackedCdmSession>()
     private val renewing = AtomicBoolean(false)
     private val scheduled = mutableListOf<ScheduledFuture<*>>()
@@ -196,6 +197,20 @@ class WidevineSession @JvmOverloads constructor(
         lastChallenge.set(challenge)
     }
 
+    /**
+     * Content KID for `/drm-token`: parsed from [challenge] when it carries one (initial license
+     * request), otherwise the KID remembered from an earlier request. Widevine renewal challenges
+     * only reference the existing license, so they never contain the PSSH / KID.
+     */
+    internal fun contentKeyId(challenge: ByteArray): ByteArray? {
+        val parsed = WidevineKeyIds.firstKeyId(challenge)
+        if (parsed != null) {
+            lastKeyId.set(parsed)
+            return parsed
+        }
+        return lastKeyId.get()
+    }
+
     internal fun throwIfBlocked() {
         val terminal = terminalError.get()
         if (terminal != null) {
@@ -243,7 +258,7 @@ class WidevineSession @JvmOverloads constructor(
 
     private fun renewOne(challenge: ByteArray, session: TrackedCdmSession?) {
         if (released.get()) return
-        val kid = WidevineKeyIds.firstKeyId(challenge) ?: return
+        val kid = contentKeyId(challenge) ?: return
         try {
             val token = client.fetchToken(DrmIdentifiers.toHex(kid))
             val license = client.acquireLicense(challenge, token)

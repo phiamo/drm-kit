@@ -40,7 +40,9 @@ class WidevineMediaDrmCallback(
     ): MediaDrmCallback.Response {
         session.throwIfBlocked()
         val challenge = request.data
-        val kid = WidevineKeyIds.firstKeyId(challenge)
+        // Renewal challenges (MediaDrm KEY_REQUIRED) reference the existing license and carry no
+        // PSSH / KID, so reuse the content KID from this session's first license request.
+        val kid = session.contentKeyId(challenge)
         if (kid == null) {
             session.report(DrmPlaybackError.unknown)
             throw drmCallbackException(session.licenseUrl, DrmKitException(DrmPlaybackError.unknown))
