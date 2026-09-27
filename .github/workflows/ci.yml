@@ -27,4 +27,12 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - run: xcodebuild test -scheme DrmKit -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5' -skipMacroValidation
+      - name: Resolve available iPhone simulator
+        id: sim
+        run: |
+          DEST=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9]+ \([0-9A-F-]+\)' | head -1 | sed -E 's/ \([0-9A-F-]+\)//')
+          RUNTIME=$(xcrun simctl list runtimes | grep -oE 'iOS [0-9]+\.[0-9]+' | tail -1 | awk '{print $2}')
+          echo "name=$DEST" >> "$GITHUB_OUTPUT"
+          echo "os=$RUNTIME" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $DEST / iOS $RUNTIME"
+      - run: xcodebuild test -scheme DrmKit -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=${{ steps.sim.outputs.os }}" -skipMacroValidation
