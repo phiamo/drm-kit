@@ -44,6 +44,11 @@ jobs:
         run: |
           grep -q '.iOS(.v${{ matrix.ios }})' Package.swift
           xcodebuild build-for-testing -scheme DrmKit -destination 'generic/platform=iOS Simulator' -skipMacroValidation
+      - name: Build the FairPlay pilot app for the iOS ${{ matrix.ios }} deployment target
+        if: matrix.build_only
+        run: |
+          grep -q 'IPHONEOS_DEPLOYMENT_TARGET = ${{ matrix.ios }}.0;' pilot/DrmKitPilot.xcodeproj/project.pbxproj
+          xcodebuild build -project pilot/DrmKitPilot.xcodeproj -scheme DrmKitPilot -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -skipMacroValidation
       - name: Ensure an iOS ${{ matrix.ios }} simulator
         if: ${{ !matrix.build_only }}
         id: sim

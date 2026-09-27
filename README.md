@@ -1,6 +1,6 @@
 # drm-kit
 
-DRM building blocks for native players: an Android **Widevine session** for Media3 (license, token, renewal, heartbeat and stream limits), plus **DRM identifier** helpers for Android and iOS. It's a Kotlin Android library and a Swift package, with no Capacitor dependency.
+DRM building blocks for native players: an Android **Widevine session** for Media3 and an iOS **FairPlay session** for `AVContentKeySession` (license, token, renewal, heartbeat and stream limits), plus **DRM identifier** helpers for Android and iOS. It's a Kotlin Android library and a Swift package, with no Capacitor dependency.
 
 [![JitPack](https://jitpack.io/v/phiamo/drm-kit.svg)](https://jitpack.io/#phiamo/drm-kit)
 [![CI](https://img.shields.io/github/actions/workflow/status/phiamo/drm-kit/ci.yml?style=flat-square)](https://github.com/phiamo/drm-kit/actions/workflows/ci.yml)
@@ -14,7 +14,7 @@ DRM building blocks for native players: an Android **Widevine session** for Medi
 |---|---|---|
 | 🎵 | [**capacitor-plugin-playlist**](https://github.com/phiamo/capacitor-plugin-playlist) · [`@dwbn/capacitor-plugin-playlist`](https://www.npmjs.com/package/@dwbn/capacitor-plugin-playlist) | Background audio playlists, lock screen, audio↔video handoff |
 | 🎬 | [**capacitor-video-player**](https://github.com/phiamo/capacitor-video-player) · [`@dwbn/capacitor-video-player`](https://www.npmjs.com/package/@dwbn/capacitor-video-player) | Native fullscreen video with Media3 / AVPlayer, PiP, Chromecast and subtitles |
-| 🔐 | **drm-kit** (this repo) · Swift Package Manager / JitPack | Widevine session and DRM identifiers that the host app plugs into both plugins |
+| 🔐 | **drm-kit** (this repo) · Swift Package Manager / JitPack | Widevine and FairPlay sessions and DRM identifiers that the host app plugs into both plugins |
 
 The two plugins never depend on drm-kit. Each exposes a small provider hook (`AudioDrm.setProvider`, `VideoDrm.setProvider`). The **host app** adds drm-kit and registers one session class for both. Without DRM, the plugins behave exactly as before. The [audio ↔ video handoff guide](https://github.com/phiamo/capacitor-plugin-playlist/blob/main/docs/video-handoff.md#handoff-with-drm) shows all three working together.
 
@@ -24,10 +24,10 @@ The two plugins never depend on drm-kit. Each exposes a small provider hook (`Au
 |---|---|---|
 | `DrmIdentifiers` (hex, UUID, FairPlay URI, Axinom key id/value) | ✅ | ✅ |
 | Widevine session for Media3 (`WidevineSession`) | ✅ 0.3.1 | — |
-| FairPlay (`AVContentKeySession`) | — | planned |
+| FairPlay session for `AVPlayer` (`FairPlaySession`) | — | 🧪 unreleased (device pilot pending) |
 | Offline / persistable keys | planned | planned |
 
-Current release: **0.3.1** (0.3.1: license renewals work — renewal requests reuse the first request's KID). `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 18.
+Current release: **0.3.1** (0.3.1: license renewals work — renewal requests reuse the first request's KID). `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 15.
 
 ## Install
 
@@ -93,6 +93,36 @@ VideoDrm.setProvider(AppWidevineSession::new);
 ```
 
 Errors reach the plugins as one of `blockedByStreamLimit`, `notEntitled`, `expired`, `network` or `unknown` (`DrmPlaybackError`). Don't auto-retry `blockedByStreamLimit`. The token getter is called for every request, so a token your app refreshes also reaches long sessions. drm-kit never refreshes tokens itself (breaking change in 0.3.0).
+
+### iOS (FairPlay)
+
+`FairPlaySession` mirrors `WidevineSession`: same token, license, heartbeat and error contract, plus the descriptor's `fairplayCertificateUrl`. Route the asset's key requests through it before playback:
+
+```swift
+import DrmKit
+
+let config = FairPlaySession.Config(
+    tokenUrl: Api.tokenUrl(slug),                      // absolute URLs, built by the app
+    licenseUrl: drm.fairplayLicenseUrl,
+    certificateUrl: drm.fairplayCertificateUrl,
+    heartbeatUrl: Api.heartbeatUrl(drm.playbackSessionId),
+    playbackSessionId: drm.playbackSessionId,
+    renewalCredential: drm.renewalCredential,
+    authorization: { Auth.currentAccessToken() },       // read on every request
+    streamLimit: StreamLimit(mode: drm.streamLimit.mode,
+                             renewalIntervalSeconds: drm.streamLimit.renewalIntervalSeconds,
+                             heartbeatIntervalSeconds: drm.streamLimit.heartbeatIntervalSeconds)
+)
+let session = FairPlaySession(config: config) { error in onError(error.rawValue) }
+let asset = AVURLAsset(url: manifestUrl)
+session.addContentKeyRecipient(asset)  // before the player item loads
+player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+session.start()                        // renewal / heartbeat timers
+// … on teardown:
+session.release()
+```
+
+Each key request (initial or renewing) fetches the application certificate once per session, builds the SPC, fetches a fresh `/drm-token` for the KID in the request's `skd://` URI (never from the SPC), POSTs the SPC with `X-AxDRM-Message` and returns the CKC. `axinom_csl` / `long_license` renew with `renewExpiringResponseData` at 70% of `renewalIntervalSeconds`, then every interval; `app_heartbeat` posts the heartbeat every `heartbeatIntervalSeconds`; `none` runs no timers. `contentIdentifierForm` picks the key URI Axinom sees (`.keyUri` as in the playlist, or `.axinomGuid`); the device pilot (Story 58.2) decides which one production uses. FairPlay does not work on the simulator. The pilot app in [`pilot/`](./pilot) plays one descriptor on a device.
 
 Plugin-side details: [playlist DRM](https://github.com/phiamo/capacitor-plugin-playlist/blob/main/docs/drm.md) · [video DRM](https://github.com/phiamo/capacitor-video-player/blob/main/docs/drm.md).
 

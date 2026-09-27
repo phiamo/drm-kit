@@ -19,6 +19,9 @@ let package = Package(
         .testTarget(
             name: "DrmKitTests",
             dependencies: ["DrmKit"],
-            path: "ios/Tests/DrmKitTests")
+            path: "ios/Tests/DrmKitTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ])
     ]
 )
