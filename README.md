@@ -6,6 +6,8 @@ DRM building blocks for native players: an Android **Widevine session** for Medi
 [![CI](https://img.shields.io/github/actions/workflow/status/phiamo/drm-kit/ci.yml?style=flat-square)](https://github.com/phiamo/drm-kit/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W8V527Q5YX)
+
 ## Part of the DWBN media stack
 
 | | Project | What it does |
@@ -108,5 +110,3 @@ Work on DRM happens on `feature/vod-drm` (merge `main` first). Tag releases as `
 ## License
 
 [MIT](./LICENSE) © Philipp Mohrenweiser. Built for the DWBN apps.
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W8V527Q5YX)

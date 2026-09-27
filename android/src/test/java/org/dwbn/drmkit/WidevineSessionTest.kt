@@ -121,9 +121,11 @@ class WidevineSessionTest {
         enqueueLicense("lic-renew")
         val scheduler = FakeScheduler()
         val fixture = widevineKeyIdProtobuf(VECTOR_KID)
-        val session = session(StreamLimit(StreamLimit.MODE_AXINOM_CSL, 7, 0), scheduler)
+        val licenses = mutableListOf<ByteArray>()
+        val session = session(StreamLimit(StreamLimit.MODE_AXINOM_CSL, 7, 0), scheduler, licenses::add)
         session.start()
         assertEquals(listOf(7L), scheduler.periods)
+        assertEquals(listOf(WidevineSession.firstRenewalDelaySeconds(7)), scheduler.initialDelays)
         session.createMediaDrmCallback().executeKeyRequest(C.WIDEVINE_UUID, keyRequest(fixture))
         server.takeRequest()
         server.takeRequest()
@@ -131,6 +133,8 @@ class WidevineSessionTest {
         val tokenRenew = server.takeRequest()
         assertTokenRequest(tokenRenew, VECTOR_KID)
         assertLicenseRequest(server.takeRequest(), fixture, "token-renew")
+        assertEquals(1, licenses.size)
+        assertArrayEquals("lic-renew".toByteArray(), licenses[0])
         session.release()
     }
 
@@ -142,15 +146,19 @@ class WidevineSessionTest {
         enqueueLicense("lic-renew")
         val scheduler = FakeScheduler()
         val fixture = widevineKeyIdProtobuf(VECTOR_KID)
-        val session = session(StreamLimit(StreamLimit.MODE_LONG_LICENSE, 11, 0), scheduler)
+        val licenses = mutableListOf<ByteArray>()
+        val session = session(StreamLimit(StreamLimit.MODE_LONG_LICENSE, 11, 0), scheduler, licenses::add)
         session.start()
         assertEquals(listOf(11L), scheduler.periods)
+        assertEquals(listOf(WidevineSession.firstRenewalDelaySeconds(11)), scheduler.initialDelays)
         session.createMediaDrmCallback().executeKeyRequest(C.WIDEVINE_UUID, keyRequest(fixture))
         server.takeRequest()
         server.takeRequest()
         scheduler.runPending()
         assertTokenRequest(server.takeRequest(), VECTOR_KID)
         assertLicenseRequest(server.takeRequest(), fixture, "token-renew")
+        assertEquals(1, licenses.size)
+        assertArrayEquals("lic-renew".toByteArray(), licenses[0])
         session.release()
     }
 
@@ -162,6 +170,7 @@ class WidevineSessionTest {
         val session = session(StreamLimit(StreamLimit.MODE_APP_HEARTBEAT, 0, 4), scheduler)
         session.start()
         assertEquals(listOf(4L), scheduler.periods)
+        assertEquals(listOf(4L), scheduler.initialDelays)
         scheduler.runPending()
         val first = server.takeRequest()
         assertHeartbeat(first)
@@ -363,9 +372,17 @@ class WidevineSessionTest {
         assertEquals(listOf(expected), errors)
     }
 
+    @Test
+    fun firstRenewalDelayIsBeforeConfiguredPeriod() {
+        assertEquals(210L, WidevineSession.firstRenewalDelaySeconds(300))
+        assertEquals(4L, WidevineSession.firstRenewalDelaySeconds(7))
+        assertEquals(1L, WidevineSession.firstRenewalDelaySeconds(1))
+    }
+
     private fun session(
         streamLimit: StreamLimit,
         scheduler: FakeScheduler = FakeScheduler(),
+        licenseSink: ((ByteArray) -> Unit)? = null,
     ): WidevineSession {
         val config = WidevineSession.Config(
             tokenUrl = server.url("/drm-token").toString(),
@@ -381,6 +398,7 @@ class WidevineSessionTest {
             client = WidevineLicenseClient(config),
             scheduler = scheduler,
             onError = { error -> errors += error },
+            licenseSink = licenseSink,
         )
     }
 
@@ -460,10 +478,16 @@ class WidevineSessionTest {
 
 internal class FakeScheduler : WidevineSession.TaskScheduler {
     val periods = mutableListOf<Long>()
+    val initialDelays = mutableListOf<Long>()
     private val commands = mutableListOf<Runnable>()
     private val futures = mutableListOf<CancelHandle>()
 
-    override fun scheduleAtFixedRate(periodSeconds: Long, command: Runnable): ScheduledFuture<*> {
+    override fun scheduleAtFixedRate(
+        initialDelaySeconds: Long,
+        periodSeconds: Long,
+        command: Runnable,
+    ): ScheduledFuture<*> {
+        initialDelays += initialDelaySeconds
         periods += periodSeconds
         commands += command
         val handle = CancelHandle()
