@@ -45,12 +45,16 @@ final class PilotModel: ObservableObject {
         var request = URLRequest(url: url)
         request.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        append("descriptor GET \(url.absoluteString) authLen=\(authorizationHeader.count)")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            append("descriptor GET → HTTP \(status)")
             if (200..<300).contains(status) {
                 descriptorJson = String(data: data, encoding: .utf8) ?? ""
+                append("descriptor GET → HTTP \(status)")
+            } else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                append("descriptor GET → HTTP \(status) body=\(body.prefix(300))")
             }
         } catch {
             append("descriptor GET failed: \(error.localizedDescription)")
