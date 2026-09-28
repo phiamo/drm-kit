@@ -24,4 +24,6 @@ Client DRM playback, stream-cap, and FairPlay-on-device are **manual-before-tag*
 2. **Fetch descriptor** (or paste the `/assets/{slug}/playback` JSON), choose the key URI form (`keyUri` = the playlist's `skd://` as is, `axinomGuid` = `skd://<GUID>:<IV>`), then **Play**.
 3. The screen shows the key URIs seen and the certificate / token / license / heartbeat requests for this playback; **Stop** logs the totals. It never shows the token, SPC or CKC.
 
-Record in the story: whether `keyUri` decrypts (Shaka's form accepted) or only `axinomGuid`, and the license requests per playback.
+**Result (2026-09-28, iPhone 7 `iPhone9,3` iOS 15.8.5, against ferrix `test-1`):** `keyUri` decrypts — Axinom accepts Shaka's default `skd://<kidHex>:<ivHex>` form as-is, `axinomGuid` is not needed. Per playback: certificate 1 · token 2 · license 2 · heartbeat 0. See `spec-58-2-fairplay-pilot-in-drm-kit.md` and `spec-58-3-fairplay-key-uri-after-the-pilot.md` in the sibling `myrecordings` repo (`_bmad-output/implementation-artifacts/`).
+
+If you re-run this pilot later (new device, new iOS version, or after any Axinom-side change), record the same things here: which form decrypted, and the per-playback certificate/token/license/heartbeat counts.
