@@ -121,8 +121,11 @@ public final class FairPlaySession: NSObject {
         }
     }
 
-    /// Routes the asset's FairPlay key requests through this session. Call before playback.
-    public func addContentKeyRecipient(_ asset: AVURLAsset) {
+    /// Routes the recipient's FairPlay key requests through this session. Call before playback,
+    /// and again for any `AVComposition` rebuilt from an already-registered `AVURLAsset` — an
+    /// `AVPlayerItem` built from a composition only receives key requests for recipients
+    /// registered on that composition object itself, not on the source asset it was built from.
+    public func addContentKeyRecipient(_ asset: AVContentKeyRecipient) {
         contentKeySession.addContentKeyRecipient(asset)
     }
 
