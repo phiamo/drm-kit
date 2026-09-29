@@ -369,6 +369,13 @@ final class AVKeyRequestAdapter: FairPlayKeyRequest {
         if let url = request.identifier as? URL {
             return url.absoluteString
         }
+        // Some iOS versions (observed on iOS 15) deliver the EXT-X-KEY URI as the raw UTF-8
+        // bytes rather than a bridged NSString/NSURL -- without this, keyIdentifier silently
+        // returns nil and every key request fails instantly with .unknown, never reaching the
+        // network (no cert/token/license call at all).
+        if let data = request.identifier as? Data, let string = String(data: data, encoding: .utf8) {
+            return string
+        }
         return nil
     }
 
