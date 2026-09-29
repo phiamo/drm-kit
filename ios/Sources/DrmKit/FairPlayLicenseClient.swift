@@ -55,6 +55,9 @@ public final class FairPlayLicenseClient {
 
     /// DER application certificate from the descriptor's `fairplayCertificateUrl` (public, no auth).
     public func fetchCertificate() async throws -> Data {
+        NSLog("[DrmKit][diag] config.certificateUrl = '%@' (isEmpty: %@), config.licenseUrl = '%@', config.tokenUrl = '%@'",
+              config.certificateUrl, config.certificateUrl.isEmpty ? "true" : "false",
+              config.licenseUrl, config.tokenUrl)
         var request = URLRequest(url: try url(config.certificateUrl))
         request.httpMethod = "GET"
         let body = try await execute(request, kind: .certificate)
