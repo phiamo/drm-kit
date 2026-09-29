@@ -363,6 +363,12 @@ final class AVKeyRequestAdapter: FairPlayKeyRequest {
     }
 
     var keyIdentifier: String? {
+        // TEMPORARY diagnostic (Story 58.5 device debugging) -- remove once the real
+        // request.identifier type/value on this device is known.
+        NSLog("[DrmKit][diag] request.identifier = %@ (type: %@), request.identifier is nil: %@",
+              String(describing: request.identifier),
+              String(describing: type(of: request.identifier as Any)),
+              request.identifier == nil ? "true" : "false")
         if let string = request.identifier as? String {
             return string
         }
