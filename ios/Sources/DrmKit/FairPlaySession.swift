@@ -202,15 +202,12 @@ public final class FairPlaySession: NSObject {
             request.processContentKeyResponseError(DrmPlaybackError.unknown)
             return
         }
-        NSLog("[DrmKit-DIAG] handle() called, raw identifier=%@", request.keyIdentifier ?? "<nil>")
         guard let identifier = request.keyIdentifier,
               let keyUri = FairPlayKeyIds.parse(identifier),
               let contentIdentifier = FairPlayKeyIds.contentIdentifier(identifier, form: config.contentIdentifierForm) else {
-            NSLog("[DrmKit-DIAG] parse/contentIdentifier FAILED for identifier=%@", request.keyIdentifier ?? "<nil>")
             fail(request, .unknown)
             return
         }
-        NSLog("[DrmKit-DIAG] parsed kidHex=%@ ivHex=%@", keyUri.kidHex, keyUri.ivHex ?? "<nil>")
         withLock {
             inFlight.insert(identifier)
             if !identifiers.contains(identifier) {
@@ -221,25 +218,18 @@ public final class FairPlaySession: NSObject {
             withLock { _ = inFlight.remove(identifier) }
         }
         do {
-            NSLog("[DrmKit-DIAG] [%@] fetching certificate...", keyUri.kidHex)
             let certificate = try await self.certificate()
-            NSLog("[DrmKit-DIAG] [%@] certificate OK, %d bytes", keyUri.kidHex, certificate.count)
             let spc: Data
             do {
                 spc = try await request.makeStreamingContentKeyRequestData(
                     certificate: certificate,
                     contentIdentifier: contentIdentifier
                 )
-                NSLog("[DrmKit-DIAG] [%@] makeStreamingContentKeyRequestData OK, %d bytes", keyUri.kidHex, spc.count)
             } catch {
-                NSLog("[DrmKit-DIAG] [%@] makeStreamingContentKeyRequestData FAILED: %@", keyUri.kidHex, String(describing: error))
                 throw DrmPlaybackError.unknown
             }
-            NSLog("[DrmKit-DIAG] [%@] fetching token...", keyUri.kidHex)
             let token = try await client.fetchToken(kidHex: keyUri.kidHex)
-            NSLog("[DrmKit-DIAG] [%@] token OK, acquiring license...", keyUri.kidHex)
             let ckc = try await client.acquireLicense(spc: spc, token: token)
-            NSLog("[DrmKit-DIAG] [%@] license OK, %d bytes", keyUri.kidHex, ckc.count)
             let accepted: Bool = withLock {
                 guard !released else { return false }
                 answered[identifier] = request
@@ -251,7 +241,6 @@ public final class FairPlaySession: NSObject {
             }
             request.processContentKeyResponse(ckc: ckc)
         } catch {
-            NSLog("[DrmKit-DIAG] [%@] handle() FAILED overall: %@", keyUri.kidHex, String(describing: error))
             fail(request, (error as? DrmPlaybackError) ?? .unknown)
         }
     }
