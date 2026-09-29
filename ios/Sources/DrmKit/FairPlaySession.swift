@@ -218,18 +218,25 @@ public final class FairPlaySession: NSObject {
             withLock { _ = inFlight.remove(identifier) }
         }
         do {
+            NSLog("[DrmKit][diag] fetching certificate...")
             let certificate = try await self.certificate()
+            NSLog("[DrmKit][diag] certificate fetched, %d bytes", certificate.count)
             let spc: Data
             do {
                 spc = try await request.makeStreamingContentKeyRequestData(
                     certificate: certificate,
                     contentIdentifier: contentIdentifier
                 )
+                NSLog("[DrmKit][diag] SPC generated, %d bytes", spc.count)
             } catch {
+                NSLog("[DrmKit][diag] makeStreamingContentKeyRequestData FAILED: %@", String(describing: error))
                 throw DrmPlaybackError.unknown
             }
+            NSLog("[DrmKit][diag] fetching token for kid %@...", keyUri.kidHex)
             let token = try await client.fetchToken(kidHex: keyUri.kidHex)
+            NSLog("[DrmKit][diag] token fetched, acquiring license...")
             let ckc = try await client.acquireLicense(spc: spc, token: token)
+            NSLog("[DrmKit][diag] license acquired, %d bytes", ckc.count)
             let accepted: Bool = withLock {
                 guard !released else { return false }
                 answered[identifier] = request
@@ -241,6 +248,7 @@ public final class FairPlaySession: NSObject {
             }
             request.processContentKeyResponse(ckc: ckc)
         } catch {
+            NSLog("[DrmKit][diag] handle() caught error: %@", String(describing: error))
             fail(request, (error as? DrmPlaybackError) ?? .unknown)
         }
     }
