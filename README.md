@@ -83,7 +83,7 @@ public final class AppWidevineSession implements AudioDrmSession, VideoDrmSessio
 }
 ```
 
-`Api`, `Auth` and `StreamLimits` stand for your own app code. `StreamLimits.from` builds a `StreamLimit(mode, renewalIntervalSeconds, heartbeatIntervalSeconds)` and falls back to `StreamLimit.MODE_NONE`.
+`Api`, `Auth` and `StreamLimits` stand for your own app code. `StreamLimits.from` builds a `StreamLimit(mode, renewalIntervalSeconds, heartbeatIntervalSeconds)` and falls back to `StreamLimit.MODE_NONE`. The full Capacitor host (DrmHost holder, JS→native token push, and iOS `MyFairPlaySession`) is in [docs/capacitor.md](./docs/capacitor.md).
 
 Register the session class once in your `Application`:
 
@@ -95,6 +95,8 @@ VideoDrm.setProvider(AppWidevineSession::new);
 Errors reach the plugins as one of `blockedByStreamLimit`, `notEntitled`, `expired`, `network` or `unknown` (`DrmPlaybackError`). Don't auto-retry `blockedByStreamLimit`. The token getter is called for every request, so a token your app refreshes also reaches long sessions. drm-kit never refreshes tokens itself (breaking change in 0.3.0).
 
 ### iOS (FairPlay)
+
+For Capacitor (`VideoDrm` / `AudioDrm` provider, dual `open` overloads), copy [docs/capacitor.md](./docs/capacitor.md). The snippet below is the non-Capacitor `AVPlayer` path.
 
 `FairPlaySession` mirrors `WidevineSession`: same token, license, heartbeat and error contract, plus the descriptor's `fairplayCertificateUrl`. Route the asset's key requests through it before playback:
 
@@ -131,6 +133,7 @@ Plugin-side details: [playlist DRM](https://github.com/phiamo/capacitor-plugin-p
 | | |
 |---|---|
 | [Key IDs and identifiers](./docs/identifiers.md) | Which KID to send to `/drm-token` on each platform, and `DrmIdentifiers` |
+| [Capacitor host adapter](./docs/capacitor.md) | DrmHost + plugin (TS / Swift / Java) and `MyFairPlaySession` / `AppWidevineSession` |
 | [Testing](./docs/testing.md) | Unit tests, CI, and the manual device matrix before a tag |
 
 ## Contributing
