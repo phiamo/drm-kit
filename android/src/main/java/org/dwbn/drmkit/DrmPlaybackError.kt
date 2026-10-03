@@ -6,6 +6,7 @@ package org.dwbn.drmkit
 enum class DrmPlaybackError {
     blockedByStreamLimit,
     notEntitled,
+    offlineDeviceLimit,
     expired,
     network,
     unknown,

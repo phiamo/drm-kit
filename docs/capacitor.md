@@ -492,4 +492,36 @@ Add drm-kit to the **app** module (`implementation 'com.github.phiamo:drm-kit:â€
 
 ## Errors
 
-Provider errors reach the plugins as `blockedByStreamLimit`, `notEntitled`, `expired`, `network`, or `unknown`. Do not auto-retry `blockedByStreamLimit`.
+Provider errors reach the plugins as `blockedByStreamLimit`, `notEntitled`, `offlineDeviceLimit`, `expired`, `network`, or `unknown`. Do not auto-retry `blockedByStreamLimit`. `offlineDeviceLimit` only occurs for offline licences.
+
+## Android offline licences and encrypted subtitles (0.5.0)
+
+`OfflineLicenseManager` keeps one persistent Widevine licence (`keySetId`) per download; `EncryptedSubtitleStore` (`manager.subtitles`) keeps subtitles encrypted. Both live under `Context.noBackupFilesDir/drm-kit`, so they stay out of backups. Every method blocks (network, CDM): call it from a background thread. There is no Capacitor dependency; the playlist plugin reaches it through the host-registered provider, like streaming.
+
+```java
+OfflineLicenseManager manager = OfflineLicenseManager.create(
+  context,
+  new OfflineLicenseConfig(installUuid, () -> Auth.currentAccessToken())); // read on every request
+
+// After the download: format = the audio Format with drmInitData (Widevine PSSH).
+OfflineEndpoints endpoints = new OfflineEndpoints(Api.drmTokenUrl(slug), licenseUrl); // absolute
+OfflineLicenseResult r = manager.acquire(downloadId, format, endpoints);
+if (!r.isSuccess()) { /* r.getError(): notEntitled, offlineDeviceLimit, expired, network, unknown */ }
+
+manager.getSubtitles().put(downloadId, "de", vttBytes);   // AES-256-GCM, Keystore key, never plaintext
+byte[] vtt = manager.getSubtitles().read(downloadId, "de"); // null if missing or corrupt
+
+// Playback, no network call:
+MediaItem.DrmConfiguration drm = manager.offlineDrmConfiguration(downloadId);        // null unless ACTIVE
+DrmSessionManager sessions = manager.createOfflineDrmSessionManager(downloadId);
+
+// Housekeeping, e.g. on app start:
+if (manager.needsRenewal(downloadId)) {          // true when <= 1 day left, or expired
+  OfflineLicenseResult renewed = manager.renew(downloadId);
+}
+manager.release(downloadId);                      // on delete: licence, keySetId and subtitles
+```
+
+- The token comes from `GET {tokenUrl}?kid=â€¦&session=download:{installUuid}&purpose=offline` with the bearer; no renewal credential. The token and licence URLs are stored per download, so one manager renews downloads of different assets after a restart.
+- `renew` after a token 403 (including `offlineDeviceLimit`) sets the state to `EXPIRED` and deletes the licence and subtitles. A token 401 (`expired`: SSO token lapsed) and any network or other failure leave everything as is, so refresh the token and retry.
+- `state(downloadId)` is `NONE`, `ACTIVE` or `EXPIRED`. The host decides when to call `renew`.
