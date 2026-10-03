@@ -4,6 +4,8 @@ import Foundation
 public enum DrmPlaybackError: String, Error, Equatable, CaseIterable {
     case blockedByStreamLimit
     case notEntitled
+    /// Offline licences only: the user already holds offline licences on the maximum number of devices.
+    case offlineDeviceLimit
     case expired
     case network
     case unknown
@@ -11,7 +13,7 @@ public enum DrmPlaybackError: String, Error, Equatable, CaseIterable {
     /// Terminal errors fire once, then the session releases itself. Never auto-retry them.
     public var isTerminal: Bool {
         switch self {
-        case .blockedByStreamLimit, .notEntitled, .expired:
+        case .blockedByStreamLimit, .notEntitled, .offlineDeviceLimit, .expired:
             return true
         case .network, .unknown:
             return false

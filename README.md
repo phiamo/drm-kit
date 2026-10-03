@@ -25,9 +25,9 @@ The two plugins never depend on drm-kit. Each exposes a small provider hook (`Au
 | `DrmIdentifiers` (hex, UUID, FairPlay URI, Axinom key id/value) | ✅ | ✅ |
 | Widevine session for Media3 (`WidevineSession`) | ✅ 0.5.0 | — |
 | FairPlay session for `AVPlayer` (`FairPlaySession`) | — | 🧪 unreleased (device pilot pending) |
-| Offline licences + encrypted subtitles (`OfflineLicenseManager`, `EncryptedSubtitleStore`) | ✅ 0.5.0 (device check pending) | planned |
+| Offline licences + encrypted subtitles (`OfflineLicenseManager` / `FairPlayOfflineLicenseManager`, `EncryptedSubtitleStore`) | ✅ 0.5.0 (device check pending) | ✅ 0.5.0 (device check pending) |
 
-Current Android release: **0.5.0** (offline Widevine licences and encrypted subtitles; streaming unchanged). Current iOS release: **0.3.1**. `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 15.
+Current Android release: **0.5.0** (offline Widevine licences and encrypted subtitles; streaming unchanged). Current iOS release: **0.5.0** (offline FairPlay licences and encrypted subtitles; streaming unchanged). `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 15.
 
 ## Install
 
@@ -43,7 +43,7 @@ dependencies { implementation 'com.github.phiamo:drm-kit:0.5.0' }
 **iOS**: Swift Package Manager. Add it to the **App** target in Xcode (File → Add Package Dependencies). Don't add it to a plugin's `Package.swift` or to `CapApp-SPM`, because Capacitor regenerates that file:
 
 ```swift
-.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.3.1")
+.package(url: "https://github.com/phiamo/drm-kit.git", from: "0.5.0")
 ```
 
 ## Usage

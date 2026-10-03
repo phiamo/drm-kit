@@ -14,9 +14,11 @@ iOS FairPlay tests (`FairPlaySessionTests`) stub HTTP with a `URLProtocol`, fake
 
 Android offline tests (`OfflineLicenseManagerTest`, `WidevineOfflineLicenseClientTest`, `EncryptedSubtitleStoreTest`) fake the Media3 `OfflineLicenseHelper` behind a small interface that drives the real MediaDrm callback over MockWebServer, and use a JCE AES-GCM cipher instead of Android Keystore. **No real CDM, no Keystore, no decrypt.**
 
+iOS offline tests (`FairPlayOfflineLicenseManagerTests`, `EncryptedSubtitleStoreTests`) stub HTTP with `StubURLProtocol`, fake the persistable key request and the `AVContentKeySession` driver, keep records in a temp directory and use an in-memory subtitle key with real CryptoKit AES-GCM. **No real FairPlay, no Keychain, no decrypt.**
+
 CI (`.github/workflows/ci.yml`) runs the Android job and iOS unit tests on iOS 16, 17, 18 and 26 simulators, and builds the package and the pilot app for the iOS 15 deployment target (Apple no longer serves the iOS 15 simulator runtime). **No device lab, no decrypt.** Simulators are unit-only — **never FairPlay**. Android `./gradlew test` is JVM.
 
-Client DRM playback, stream-cap, FairPlay-on-device, and **Android offline licences (real CDM `keySetId`, renewal, offline playback with the network off, Keystore subtitle encryption)** are **manual-before-tag**. Floors: iPhone 7 (`iPhone9,3`, iOS 15.8.5) is the iOS floor device; the SE (`iPhone12,8`, iOS 26.x) is the current-iOS FairPlay phone; Android API 24–28 = AVD `DRM_QA_API28` (`ANDROID_AVD_HOME=$HOME/.config/.android/avd`). Pixel 7a is Widevine L1.
+Client DRM playback, stream-cap, FairPlay-on-device, and **offline licences (Android: real CDM `keySetId`, Keystore subtitles; iOS: real persistable FairPlay key via `AVContentKeySession`, renewal, offline playback with the network off, Keychain subtitles on iPhone 7 iOS 15.8.5 and SE iOS 26.x)** are **manual-before-tag**. Floors: iPhone 7 (`iPhone9,3`, iOS 15.8.5) is the iOS floor device; the SE (`iPhone12,8`, iOS 26.x) is the current-iOS FairPlay phone; Android API 24–28 = AVD `DRM_QA_API28` (`ANDROID_AVD_HOME=$HOME/.config/.android/avd`). Pixel 7a is Widevine L1.
 
 ## FairPlay pilot app
 
