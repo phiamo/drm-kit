@@ -52,6 +52,10 @@ class OfflineLicenseManager internal constructor(
         val keySetId = try {
             withEngine(callback) { it.downloadLicense(format) }
         } catch (e: Exception) {
+            android.util.Log.w(
+                "DrmKitOffline",
+                "downloadLicense failed id=$downloadId typed=${errorOf(callback, e)} ${e.javaClass.simpleName}: ${e.message}",
+            )
             return OfflineLicenseResult.failure(errorOf(callback, e))
         }
         store.put(
