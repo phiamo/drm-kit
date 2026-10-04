@@ -40,6 +40,8 @@ public final class FairPlayOfflineLicenseManager {
     private let mutex = AsyncMutex()
     private let playbackLock = NSLock()
     private var playbackSession: AVOfflinePlaybackSession?
+    private var attachedDownloadIds = Set<String>()
+    private var attachedAssets = [ObjectIdentifier: String]()
 
     /// Production manager. State lives in Application Support `drm-kit/` (excluded from backup,
     /// protected until first unlock); the subtitle key lives in the Keychain.
@@ -170,36 +172,109 @@ public final class FairPlayOfflineLicenseManager {
 
     /// Registers `asset` so its key requests are answered from the stored key of an ACTIVE
     /// download with the same KID, with no network call. Call before the player item loads.
-    public func addOfflinePlaybackRecipient(_ asset: AVURLAsset) {
+    /// `process(identifier:)` starts the Apple persistable-key flow (`streaming request` →
+    /// `respondByRequestingPersistableContentKeyRequest` → stored blob). A `.movpkg` does not
+    /// always emit that request on its own.
+    public func addOfflinePlaybackRecipient(_ asset: AVURLAsset, downloadId: String? = nil) {
+        if let downloadId {
+            registerAttachedDownloadId(downloadId)
+            playbackLock.lock()
+            attachedAssets[ObjectIdentifier(asset)] = downloadId
+            playbackLock.unlock()
+        }
         playback().add(asset)
+        guard
+            let downloadId,
+            let record = store.get(downloadId),
+            record.state == .active,
+            record.keyBlob != nil
+        else { return }
+        NSLog("FairPlay offline preload downloadId=%@ id=%@", downloadId, record.keyIdentifier)
+        playback().process(identifier: record.keyIdentifier)
+    }
+
+    func registerAttachedDownloadId(_ downloadId: String) {
+        playbackLock.lock()
+        attachedDownloadIds.insert(downloadId)
+        playbackLock.unlock()
     }
 
     public func removeOfflinePlaybackRecipient(_ asset: AVURLAsset) {
+        playbackLock.lock()
+        if let downloadId = attachedAssets.removeValue(forKey: ObjectIdentifier(asset)),
+           !attachedAssets.values.contains(downloadId) {
+            attachedDownloadIds.remove(downloadId)
+        }
+        playbackLock.unlock()
         playback().remove(asset)
     }
 
     /// Answers one key request from the stored keys; no stored key -> key error.
     func answerPlaybackKeyRequest(_ request: FairPlayOfflineKeyRequest) {
-        guard let identifier = request.keyIdentifier, let kidHex = FairPlayKeyIds.parse(identifier)?.kidHex else {
-            request.processContentKeyResponseError(DrmPlaybackError.unknown)
+        let identifier = request.keyIdentifier
+        let now = clock()
+        if let identifier, let kidHex = FairPlayKeyIds.parse(identifier)?.kidHex {
+            let sameKid = store.all().filter { $0.kidHex == kidHex }
+            let usable = sameKid
+                .filter { record in
+                    guard record.state == .active, record.keyBlob != nil, let expiresAt = record.expiresAt else { return false }
+                    return expiresAt > now
+                }
+                .sorted { lhs, rhs in
+                    let lhsExact = lhs.keyIdentifier == identifier
+                    let rhsExact = rhs.keyIdentifier == identifier
+                    return lhsExact != rhsExact ? lhsExact : lhs.savedAt > rhs.savedAt
+                }
+            if let blob = usable.first?.keyBlob {
+                NSLog("FairPlay offline answer id=%@ kid=%@ blob=%lu", identifier, kidHex, blob.count)
+                request.processContentKeyResponse(key: blob)
+                return
+            }
+            if let fallback = attachedActiveBlob(now: now) {
+                NSLog("FairPlay offline answer fallback id=%@ kid=%@ downloadId=%@", identifier, kidHex, fallback.downloadId)
+                request.processContentKeyResponse(key: fallback.blob)
+                return
+            }
+            NSLog("FairPlay offline answer failed id=%@ kid=%@ sameKid=%lu", identifier, kidHex, sameKid.count)
+            request.processContentKeyResponseError(sameKid.isEmpty ? DrmPlaybackError.notEntitled : DrmPlaybackError.expired)
             return
         }
-        let now = clock()
-        let sameKid = store.all().filter { $0.kidHex == kidHex }
-        let usable = sameKid
-            .filter { record in
-                guard record.state == .active, record.keyBlob != nil, let expiresAt = record.expiresAt else { return false }
-                return expiresAt > now
-            }
-            .sorted { lhs, rhs in
-                let lhsExact = lhs.keyIdentifier == identifier
-                let rhsExact = rhs.keyIdentifier == identifier
-                return lhsExact != rhsExact ? lhsExact : lhs.savedAt > rhs.savedAt
-            }
-        if let blob = usable.first?.keyBlob {
-            request.processContentKeyResponse(key: blob)
-        } else {
-            request.processContentKeyResponseError(sameKid.isEmpty ? DrmPlaybackError.notEntitled : DrmPlaybackError.expired)
+        if let fallback = attachedActiveBlob(now: now) {
+            NSLog("FairPlay offline answer fallback unparsed id=%@ downloadId=%@", identifier ?? "nil", fallback.downloadId)
+            request.processContentKeyResponse(key: fallback.blob)
+            return
+        }
+        request.processContentKeyResponseError(DrmPlaybackError.unknown)
+    }
+
+    private func attachedActiveBlob(now: Date) -> (downloadId: String, blob: Data)? {
+        playbackLock.lock()
+        let ids = attachedDownloadIds
+        playbackLock.unlock()
+        let records = ids.compactMap { store.get($0) }.filter { record in
+            guard record.state == .active, record.keyBlob != nil, let expiresAt = record.expiresAt else { return false }
+            return expiresAt > now
+        }
+        guard records.count == 1, let blob = records[0].keyBlob else { return nil }
+        return (records[0].downloadId, blob)
+    }
+
+    func persistUpdatedPlaybackKey(_ key: Data, identifier: Any) {
+        guard let raw = FairPlayKeyIds.string(from: identifier), let kidHex = FairPlayKeyIds.parse(raw)?.kidHex else {
+            return
+        }
+        for record in store.all() where record.kidHex == kidHex && record.state == .active {
+            let updated = OfflineLicenseRecord(
+                downloadId: record.downloadId,
+                state: record.state,
+                keyBlob: key,
+                kidHex: record.kidHex,
+                keyIdentifier: record.keyIdentifier,
+                endpoints: record.endpoints,
+                savedAt: clock(),
+                expiresAt: record.expiresAt
+            )
+            try? store.put(updated)
         }
     }
 
@@ -207,9 +282,14 @@ public final class FairPlayOfflineLicenseManager {
         playbackLock.lock()
         defer { playbackLock.unlock() }
         if let playbackSession { return playbackSession }
-        let session = AVOfflinePlaybackSession { [weak self] request in
-            self?.answerPlaybackKeyRequest(request)
-        }
+        let session = AVOfflinePlaybackSession(
+            answer: { [weak self] request in
+                self?.answerPlaybackKeyRequest(request)
+            },
+            onUpdatedKey: { [weak self] key, identifier in
+                self?.persistUpdatedPlaybackKey(key, identifier: identifier)
+            }
+        )
         playbackSession = session
         return session
     }

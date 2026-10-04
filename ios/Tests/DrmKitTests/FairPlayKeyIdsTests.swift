@@ -31,4 +31,15 @@ final class FairPlayKeyIdsTests: XCTestCase {
         let guid = "7069BFC1-A1AD-7985-A2E8-36B424992752"
         XCTAssertEqual(FairPlayKeyIds.parse("skd://\(guid)")?.kidHex, kidHex)
     }
+
+    func testStringFromRawKidBytes() throws {
+        let bytes = try DrmIdentifiers.hexToBytes(kidHex)
+        XCTAssertEqual(FairPlayKeyIds.string(from: bytes), "skd://\(kidHex)")
+        XCTAssertEqual(FairPlayKeyIds.parse(FairPlayKeyIds.string(from: bytes) ?? "")?.kidHex, kidHex)
+    }
+
+    func testStringFromUtf8SkdData() {
+        let uri = "skd://\(kidHex):\(ivHex)"
+        XCTAssertEqual(FairPlayKeyIds.string(from: Data(uri.utf8)), uri)
+    }
 }

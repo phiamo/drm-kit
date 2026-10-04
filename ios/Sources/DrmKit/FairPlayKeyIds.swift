@@ -16,6 +16,29 @@ public enum FairPlayKeyIds {
         public let ivHex: String?
     }
 
+    /// Normalizes an `AVContentKeyRequest.identifier` (`String`, `URL`, UTF-8 `Data`, or raw 16-byte KID).
+    public static func string(from identifier: Any?) -> String? {
+        guard let identifier else { return nil }
+        if let string = identifier as? String {
+            return string
+        }
+        if let url = identifier as? URL {
+            return url.absoluteString
+        }
+        if let data = identifier as? Data {
+            if let string = String(data: data, encoding: .utf8), !string.isEmpty, parse(string) != nil {
+                return string
+            }
+            if data.count == 16 {
+                return "skd://" + DrmIdentifiers.toHex(data)
+            }
+            if let string = String(data: data, encoding: .utf8), !string.isEmpty {
+                return string
+            }
+        }
+        return nil
+    }
+
     public static func parse(_ identifier: String) -> KeyUri? {
         var body = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         if body.lowercased().hasPrefix("skd://") {

@@ -153,15 +153,35 @@ final class AVOfflineKeyDriver: NSObject, FairPlayOfflineKeyDriver, AVContentKey
     }
 }
 
+/// How to handle one offline-playback key request. A persistable blob may only be applied
+/// to an `AVPersistableContentKeyRequest` — Apple rejects it on a streaming request.
+enum OfflinePlaybackKeyAction: Equatable {
+    /// `respondByRequestingPersistableContentKeyRequest` so the persistable overload can answer.
+    case requestPersistable
+    /// Apply the stored persistable blob.
+    case answerStoredKey
+}
+
+enum OfflinePlaybackKeyPolicy {
+    static func action(for persistableRequest: Bool) -> OfflinePlaybackKeyAction {
+        persistableRequest ? .answerStoredKey : .requestPersistable
+    }
+}
+
 /// Manager-owned key session for offline playback: answers key requests of registered assets via
 /// `answer`, with no network call.
 final class AVOfflinePlaybackSession: NSObject, AVContentKeySessionDelegate {
     private let session = AVContentKeySession(keySystem: .fairPlayStreaming)
     private let queue = DispatchQueue(label: "org.dwbn.drmkit.fairplay.offline-playback")
     private let answer: (FairPlayOfflineKeyRequest) -> Void
+    private let onUpdatedKey: ((Data, Any) -> Void)?
 
-    init(answer: @escaping (FairPlayOfflineKeyRequest) -> Void) {
+    init(
+        answer: @escaping (FairPlayOfflineKeyRequest) -> Void,
+        onUpdatedKey: ((Data, Any) -> Void)? = nil
+    ) {
         self.answer = answer
+        self.onUpdatedKey = onUpdatedKey
         super.init()
         session.setDelegate(self, queue: queue)
     }
@@ -170,11 +190,25 @@ final class AVOfflinePlaybackSession: NSObject, AVContentKeySessionDelegate {
         session.addContentKeyRecipient(asset)
     }
 
+    func process(identifier: String) {
+        session.processContentKeyRequest(withIdentifier: identifier, initializationData: nil, options: nil)
+    }
+
     func remove(_ asset: AVURLAsset) {
         session.removeContentKeyRecipient(asset)
     }
 
+    /// Streaming request: upgrade to persistable, then answer the persistable callback.
+    /// Applying a persistable blob here is rejected by FairPlay and the item fails.
     func contentKeySession(_ session: AVContentKeySession, didProvide keyRequest: AVContentKeyRequest) {
+        NSLog("FairPlay offline playback key request id=%@", FairPlayKeyIds.string(from: keyRequest.identifier) ?? "nil")
+        requestPersistableOrFail(keyRequest)
+    }
+
+    /// Downloaded `.movpkg` items typically deliver this more specific method, not the
+    /// `AVContentKeyRequest` overload. This is the only request type that accepts the stored blob.
+    func contentKeySession(_ session: AVContentKeySession, didProvide keyRequest: AVPersistableContentKeyRequest) {
+        NSLog("FairPlay offline persistable key request id=%@", FairPlayKeyIds.string(from: keyRequest.identifier) ?? "nil")
         answer(AVOfflineKeyRequestAdapter(keyRequest))
     }
 
@@ -182,7 +216,42 @@ final class AVOfflinePlaybackSession: NSObject, AVContentKeySessionDelegate {
         _ session: AVContentKeySession,
         didProvideRenewingContentKeyRequest keyRequest: AVContentKeyRequest
     ) {
-        answer(AVOfflineKeyRequestAdapter(keyRequest))
+        NSLog("FairPlay offline renewing key request id=%@", FairPlayKeyIds.string(from: keyRequest.identifier) ?? "nil")
+        if keyRequest is AVPersistableContentKeyRequest {
+            answer(AVOfflineKeyRequestAdapter(keyRequest))
+            return
+        }
+        requestPersistableOrFail(keyRequest)
+    }
+
+    private func requestPersistableOrFail(_ keyRequest: AVContentKeyRequest) {
+        do {
+            try keyRequest.respondByRequestingPersistableContentKeyRequestAndReturnError()
+        } catch {
+            NSLog(
+                "FairPlay offline persistable upgrade failed id=%@ error=%@",
+                FairPlayKeyIds.string(from: keyRequest.identifier) ?? "nil",
+                String(describing: error)
+            )
+            keyRequest.processContentKeyResponseError(DrmPlaybackError.unknown)
+        }
+    }
+
+    func contentKeySession(
+        _ session: AVContentKeySession,
+        didUpdatePersistableContentKey persistableContentKey: Data,
+        forContentKeyIdentifier keyIdentifier: Any
+    ) {
+        NSLog("FairPlay offline persistable key updated id=%@ bytes=%lu", FairPlayKeyIds.string(from: keyIdentifier) ?? "nil", persistableContentKey.count)
+        onUpdatedKey?(persistableContentKey, keyIdentifier)
+    }
+
+    func contentKeySession(
+        _ session: AVContentKeySession,
+        contentKeyRequest keyRequest: AVContentKeyRequest,
+        didFailWithError err: Error
+    ) {
+        NSLog("FairPlay offline key request failed id=%@ error=%@", FairPlayKeyIds.string(from: keyRequest.identifier) ?? "nil", String(describing: err))
     }
 
     func contentKeySession(

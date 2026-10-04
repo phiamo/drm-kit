@@ -341,6 +341,11 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual(Data("persistable-stored".utf8), request.responseKey)
         XCTAssertNil(request.error)
         XCTAssertTrue(StubURLProtocol.requests.isEmpty)
+
+        manager.persistUpdatedPlaybackKey(Data("persistable-updated".utf8), identifier: Self.skd)
+        let updated = FakeOfflineKeyRequest(Self.skd)
+        manager.answerPlaybackKeyRequest(updated)
+        XCTAssertEqual(Data("persistable-updated".utf8), updated.responseKey)
     }
 
     func testOfflinePlaybackWithoutStoredKeyFails() async {
@@ -361,6 +366,18 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual(.unknown, unparseable.playbackError)
     }
 
+    func testOfflinePlaybackFallsBackToAttachedDownloadWhenIdentifierUnparsed() async {
+        let manager = makeManager()
+        enqueueAcquire(ckc: "stored", expiresIn: 27 * Self.day)
+        _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
+        manager.registerAttachedDownloadId("dl-1")
+
+        let request = FakeOfflineKeyRequest(nil)
+        manager.answerPlaybackKeyRequest(request)
+        XCTAssertEqual(Data("persistable-stored".utf8), request.responseKey)
+        XCTAssertNil(request.error)
+    }
+
     func testOfflinePlaybackRefusesExpiredDownload() async {
         let manager = makeManager()
         enqueueAcquire(expiresIn: 27 * Self.day)
@@ -375,6 +392,11 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
 
         XCTAssertEqual(.expired, request.playbackError)
         XCTAssertNil(request.responseKey)
+    }
+
+    func testOfflinePlaybackStreamingRequestMustUpgradeToPersistable() {
+        XCTAssertEqual(.requestPersistable, OfflinePlaybackKeyPolicy.action(for: false))
+        XCTAssertEqual(.answerStoredKey, OfflinePlaybackKeyPolicy.action(for: true))
     }
 
     func testOfflinePlaybackPrefersTheMatchingIdentifierThenTheNewest() async {
