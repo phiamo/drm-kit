@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 @testable import DrmKit
 
@@ -80,10 +79,4 @@ final class FakeOfflineKeyDriver: FairPlayOfflineKeyDriver {
 
     func invalidate(persistableKey: Data) async { invalidated.append(persistableKey) }
     func close() { closeCalls += 1 }
-}
-
-final class InMemorySubtitleKeyProvider: SubtitleKeyProvider {
-    private let symmetricKey: SymmetricKey
-    init(_ key: SymmetricKey = SymmetricKey(size: .bits256)) { symmetricKey = key }
-    func key() throws -> SymmetricKey { symmetricKey }
 }

@@ -494,9 +494,9 @@ Add drm-kit to the **app** module (`implementation 'com.github.phiamo:drm-kit:�
 
 Provider errors reach the plugins as `blockedByStreamLimit`, `notEntitled`, `offlineDeviceLimit`, `expired`, `network`, or `unknown`. Do not auto-retry `blockedByStreamLimit`. `offlineDeviceLimit` only occurs for offline licences.
 
-## Android offline licences and encrypted subtitles (0.5.0)
+## Android offline licences (0.5.0)
 
-`OfflineLicenseManager` keeps one persistent Widevine licence (`keySetId`) per download; `EncryptedSubtitleStore` (`manager.subtitles`) keeps subtitles encrypted. Both live under `Context.noBackupFilesDir/drm-kit`, so they stay out of backups. Every method blocks (network, CDM): call it from a background thread. There is no Capacitor dependency; the playlist plugin reaches it through the host-registered provider, like streaming.
+`OfflineLicenseManager` keeps one persistent Widevine licence (`keySetId`) per download under `Context.noBackupFilesDir/drm-kit`, so it stays out of backups. Every method blocks (network, CDM): call it from a background thread. There is no Capacitor dependency; the playlist plugin reaches it through the host-registered provider, like streaming.
 
 ```java
 OfflineLicenseManager manager = OfflineLicenseManager.create(
@@ -508,9 +508,6 @@ OfflineEndpoints endpoints = new OfflineEndpoints(Api.drmTokenUrl(slug), license
 OfflineLicenseResult r = manager.acquire(downloadId, format, endpoints);
 if (!r.isSuccess()) { /* r.getError(): notEntitled, offlineDeviceLimit, expired, network, unknown */ }
 
-manager.getSubtitles().put(downloadId, "de", vttBytes);   // AES-256-GCM, Keystore key, never plaintext
-byte[] vtt = manager.getSubtitles().read(downloadId, "de"); // null if missing or corrupt
-
 // Playback, no network call:
 MediaItem.DrmConfiguration drm = manager.offlineDrmConfiguration(downloadId);        // null unless ACTIVE
 DrmSessionManager sessions = manager.createOfflineDrmSessionManager(downloadId);
@@ -519,16 +516,16 @@ DrmSessionManager sessions = manager.createOfflineDrmSessionManager(downloadId);
 if (manager.needsRenewal(downloadId)) {          // true when <= 1 day left, or expired
   OfflineLicenseResult renewed = manager.renew(downloadId);
 }
-manager.release(downloadId);                      // on delete: licence, keySetId and subtitles
+manager.release(downloadId);                      // on delete: licence and keySetId
 ```
 
 - The token comes from `GET {tokenUrl}?kid=…&session=download:{installUuid}&purpose=offline` with the bearer; no renewal credential. The token and licence URLs are stored per download, so one manager renews downloads of different assets after a restart.
-- `renew` after a token 403 (including `offlineDeviceLimit`) sets the state to `EXPIRED` and deletes the licence and subtitles. A token 401 (`expired`: SSO token lapsed) and any network or other failure leave everything as is, so refresh the token and retry.
+- `renew` after a token 403 (including `offlineDeviceLimit`) sets the state to `EXPIRED` and deletes the licence. A token 401 (`expired`: SSO token lapsed) and any network or other failure leave everything as is, so refresh the token and retry.
 - `state(downloadId)` is `NONE`, `ACTIVE` or `EXPIRED`. The host decides when to call `renew`.
 
-## iOS offline licences and encrypted subtitles (0.5.0)
+## iOS offline licences (0.5.0)
 
-`FairPlayOfflineLicenseManager` keeps one persistable FairPlay key per download; `EncryptedSubtitleStore` (`manager.subtitles`) keeps subtitles encrypted with a Keychain key (`AfterFirstUnlockThisDeviceOnly`, not synced). Keys and ciphertext live in Application Support `drm-kit/`, which is excluded from backup and protected until first user authentication. There is no Capacitor dependency; the playlist plugin reaches it through the host-registered provider, like streaming. FairPlay does not run on the simulator.
+`FairPlayOfflineLicenseManager` keeps one persistable FairPlay key per download. Keys live in Application Support `drm-kit/`, which is excluded from backup and protected until first user authentication. There is no Capacitor dependency; the playlist plugin reaches it through the host-registered provider, like streaming. FairPlay does not run on the simulator.
 
 ```swift
 let manager = try FairPlayOfflineLicenseManager(
@@ -539,9 +536,6 @@ let endpoints = OfflineEndpoints(tokenUrl: Api.drmTokenUrl(slug), licenseUrl: li
 let result = await manager.acquire(downloadId: downloadId, keyIdentifier: skd, endpoints: endpoints)
 if let error = result.error { /* notEntitled, offlineDeviceLimit, expired, network, unknown */ }
 
-try manager.subtitles.put(downloadId: downloadId, name: "de", plain: vttData)   // AES-256-GCM, never plaintext
-let vtt = manager.subtitles.read(downloadId: downloadId, name: "de")              // nil if missing or corrupt
-
 // Playback, no network call (register before the player item loads):
 manager.addOfflinePlaybackRecipient(AVURLAsset(url: localHlsUrl))
 
@@ -550,10 +544,10 @@ if manager.needsRenewal(downloadId: downloadId) {      // true when not ACTIVE o
     let renewed = await manager.renew(downloadId: downloadId)
 }
 let expiresAt = manager.expiresAt(downloadId: downloadId)   // Date? for the "expires in N days" copy
-await manager.release(downloadId: downloadId)               // on delete: key, record and subtitles
+await manager.release(downloadId: downloadId)               // on delete: key and record
 ```
 
 - The token comes from `GET {tokenUrl}?kid=…&session=download:{installUuid}&purpose=offline` with the bearer; no renewal credential. The KID comes from the key identifier. The response must carry `licenseExpiresAt` (ISO-8601); without it `acquire`/`renew` fail with `unknown` and store nothing.
 - Token, licence and certificate URLs are stored per download, so one manager renews downloads of different assets after a restart. Operations are serialised.
-- `renew` after a token 403 (including `offlineDeviceLimit`) sets the state to `EXPIRED` and deletes the key and subtitles. A token 401 (`expired`: SSO token lapsed) and any network or other failure leave everything as is, so refresh the token and retry.
+- `renew` after a token 403 (including `offlineDeviceLimit`) sets the state to `EXPIRED` and deletes the key. A token 401 (`expired`: SSO token lapsed) and any network or other failure leave everything as is, so refresh the token and retry.
 - `state(downloadId:)` is `NONE`, `ACTIVE` or `EXPIRED`. Offline playback answers key requests from the stored key of an ACTIVE download with the same KID; without one the request fails.

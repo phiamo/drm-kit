@@ -29,11 +29,9 @@ class OfflineLicenseManagerTest {
 
     private lateinit var server: MockWebServer
     private lateinit var storeDir: File
-    private lateinit var subtitleDir: File
     private lateinit var engine: FakeEngine
     private var engineCreations = 0
     private var now = 1_000_000L
-    private val vtt = "WEBVTT\n\nGuten Morgen".toByteArray()
 
     @Before
     fun setUp() {
@@ -41,7 +39,6 @@ class OfflineLicenseManagerTest {
         server.start()
         val base = tmp.newFolder()
         storeDir = File(base, "licenses")
-        subtitleDir = File(base, "subs")
         engine = FakeEngine()
     }
 
@@ -271,17 +268,15 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
-    fun renewRefusedExpiresAndDeletesLicenceAndSubtitles() {
+    fun renewRefusedExpiresAndDeletesLicence() {
         acquireActive()
         val manager = manager()
-        manager.subtitles.put("dl-1", "de", vtt)
         server.enqueue(MockResponse().setResponseCode(403))
 
         assertEquals(DrmPlaybackError.notEntitled, manager.renew("dl-1").error)
 
         assertEquals(OfflineLicenseState.EXPIRED, manager.state("dl-1"))
         assertNull(store().get("dl-1")!!.keySetId)
-        assertNull(manager.subtitles.read("dl-1", "de"))
         assertNull(manager.offlineDrmConfiguration("dl-1"))
         assertTrue(manager.needsRenewal("dl-1"))
     }
@@ -298,27 +293,24 @@ class OfflineLicenseManagerTest {
     fun renewWithLapsedBearerKeepsEverything() {
         acquireActive()
         val manager = manager()
-        manager.subtitles.put("dl-1", "de", vtt)
         server.enqueue(MockResponse().setResponseCode(401))
 
         assertEquals(DrmPlaybackError.expired, manager.renew("dl-1").error)
 
         assertEquals(OfflineLicenseState.ACTIVE, manager.state("dl-1"))
         assertArrayEquals(KEY_SET_1, store().get("dl-1")!!.keySetId)
-        assertArrayEquals(vtt, manager.subtitles.read("dl-1", "de"))
     }
 
     @Test
     fun renewOfflineKeepsEverything() {
         acquireActive()
         val manager = manager()
-        manager.subtitles.put("dl-1", "de", vtt)
         server.shutdown()
 
         assertEquals(DrmPlaybackError.network, manager.renew("dl-1").error)
 
         assertEquals(OfflineLicenseState.ACTIVE, manager.state("dl-1"))
-        assertArrayEquals(vtt, manager.subtitles.read("dl-1", "de"))
+        assertArrayEquals(KEY_SET_1, store().get("dl-1")!!.keySetId)
     }
 
     @Test
@@ -341,15 +333,13 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
-    fun releaseDeletesRecordAndSubtitles() {
+    fun releaseDeletesRecord() {
         acquireActive()
         val manager = manager()
-        manager.subtitles.put("dl-1", "de", vtt)
 
         manager.release("dl-1")
 
         assertEquals(OfflineLicenseState.NONE, manager.state("dl-1"))
-        assertNull(manager.subtitles.read("dl-1", "de"))
         assertEquals(listOf(KEY_SET_1.toList()), engine.releasedKeySets.map { it.toList() })
     }
 
@@ -357,13 +347,11 @@ class OfflineLicenseManagerTest {
     fun releaseDeletesEvenWhenCdmReleaseFails() {
         acquireActive()
         val manager = manager()
-        manager.subtitles.put("dl-1", "de", vtt)
         engine.releaseFails = true
 
         manager.release("dl-1")
 
         assertEquals(OfflineLicenseState.NONE, manager.state("dl-1"))
-        assertNull(manager.subtitles.read("dl-1", "de"))
     }
 
     @Test
@@ -432,14 +420,11 @@ class OfflineLicenseManagerTest {
         return OfflineLicenseManager(
             config = config,
             store = store(),
-            subtitles = EncryptedSubtitleStore(subtitleDir, JceSubtitleCipher(sharedKey)),
             engineFactory = factory,
             client = WidevineOfflineLicenseClient(config),
             clock = { now },
         )
     }
-
-    private val sharedKey = JceSubtitleCipher.newKey()
 
     private fun engineFactory() = OfflineLicenseEngineFactory { callback ->
         engineCreations++

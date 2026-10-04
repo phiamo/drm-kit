@@ -13,7 +13,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
     private var dir: URL!
     private var now = FairPlayOfflineLicenseManagerTests.start
     private var driver: FakeOfflineKeyDriver!
-    private var subtitleKeys: InMemorySubtitleKeyProvider!
     private var accessToken = "access-token"
 
     private let endpoints = OfflineEndpoints(
@@ -27,7 +26,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         StubURLProtocol.reset()
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("drmkit-offline-\(UUID().uuidString)")
         driver = FakeOfflineKeyDriver()
-        subtitleKeys = InMemorySubtitleKeyProvider()
         now = Self.start
     }
 
@@ -252,7 +250,7 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual("tok-2", requests[2].header("X-AxDRM-Message"))
     }
 
-    func testRenewRefusalExpiresAndDeletesKeyAndSubtitles() async throws {
+    func testRenewRefusalExpiresAndDeletesKey() async {
         for body in [Data(), Data("{\"error\":\"offline_device_limit\"}".utf8)] {
             StubURLProtocol.reset()
             driver = FakeOfflineKeyDriver()
@@ -260,7 +258,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
             let manager = makeManager()
             enqueueAcquire(expiresIn: 27 * Self.day)
             _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
-            try manager.subtitles.put(downloadId: "dl-1", name: "de", plain: Data("WEBVTT".utf8))
             StubURLProtocol.reset()
             StubURLProtocol.enqueue("/cert.cer", .http(200, body: Self.certificate))
             StubURLProtocol.enqueue("/drm-token", .http(403, body: body))
@@ -270,18 +267,16 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
             XCTAssertEqual(.failure(body.isEmpty ? .notEntitled : .offlineDeviceLimit), result)
             XCTAssertEqual(.expired, manager.state(downloadId: "dl-1"))
             XCTAssertNil(playbackKey(manager))
-            XCTAssertNil(manager.subtitles.read(downloadId: "dl-1", name: "de"))
             XCTAssertTrue(manager.needsRenewal(downloadId: "dl-1"))
             let again = await manager.renew(downloadId: "dl-1")
             XCTAssertEqual(.failure(.expired), again)
         }
     }
 
-    func testRenewWithLapsedBearerKeepsStateKeyAndSubtitles() async throws {
+    func testRenewWithLapsedBearerKeepsStateAndKey() async {
         let manager = makeManager()
         enqueueAcquire(ckc: "kept", expiresIn: 27 * Self.day)
         _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
-        try manager.subtitles.put(downloadId: "dl-1", name: "de", plain: Data("WEBVTT".utf8))
         StubURLProtocol.reset()
         StubURLProtocol.enqueue("/cert.cer", .http(200, body: Self.certificate))
         StubURLProtocol.enqueue("/drm-token", .http(401))
@@ -291,7 +286,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual(.failure(.expired), result)
         XCTAssertEqual(.active, manager.state(downloadId: "dl-1"))
         XCTAssertEqual(Data("persistable-kept".utf8), playbackKey(manager))
-        XCTAssertEqual(Data("WEBVTT".utf8), manager.subtitles.read(downloadId: "dl-1", name: "de"))
     }
 
     func testRenewFailuresOtherThanTokenRefusalLeaveStateUntouched() async throws {
@@ -307,7 +301,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
             enqueueAcquire(ckc: "kept", expiresIn: 27 * Self.day)
             _ = await manager.acquire(downloadId: "dl-\(path)-\(expected)", keyIdentifier: Self.skd, endpoints: endpoints)
             let id = "dl-\(path)-\(expected)"
-            try manager.subtitles.put(downloadId: id, name: "de", plain: Data("WEBVTT".utf8))
             StubURLProtocol.reset()
             StubURLProtocol.enqueue("/cert.cer", .http(200, body: Self.certificate))
             if path == "/AcquireLicense" { enqueueToken(expiresIn: 27 * Self.day) }
@@ -317,7 +310,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
 
             XCTAssertEqual(.failure(expected), result, "\(path) \(expected)")
             XCTAssertEqual(.active, manager.state(downloadId: id))
-            XCTAssertNotNil(manager.subtitles.read(downloadId: id, name: "de"))
         }
     }
 
@@ -418,20 +410,16 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
 
     // MARK: Release / state
 
-    func testReleaseRemovesKeyRecordAndSubtitlesAndInvalidatesBestEffort() async throws {
+    func testReleaseRemovesKeyAndRecordAndInvalidatesBestEffort() async {
         let manager = makeManager()
         enqueueAcquire(ckc: "gone", expiresIn: 27 * Self.day)
         _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
-        try manager.subtitles.put(downloadId: "dl-1", name: "de", plain: Data("WEBVTT".utf8))
-        try manager.subtitles.put(downloadId: "dl-1", name: "en", plain: Data("WEBVTT".utf8))
 
         await manager.release(downloadId: "dl-1")
 
         XCTAssertEqual(.none, manager.state(downloadId: "dl-1"))
         XCTAssertNil(manager.expiresAt(downloadId: "dl-1"))
         XCTAssertNil(playbackKey(manager))
-        XCTAssertNil(manager.subtitles.read(downloadId: "dl-1", name: "de"))
-        XCTAssertNil(manager.subtitles.read(downloadId: "dl-1", name: "en"))
         XCTAssertEqual([Data("persistable-gone".utf8)], driver.invalidated)
     }
 
@@ -509,7 +497,6 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         return FairPlayOfflineLicenseManager(
             config: config,
             store: FileOfflineLicenseStore(dir: dir.appendingPathComponent("offline-licenses")),
-            subtitles: EncryptedSubtitleStore(root: dir.appendingPathComponent("subtitles"), keyProvider: subtitleKeys),
             client: FairPlayOfflineLicenseClient(config: config, urlSession: StubURLProtocol.session()),
             driverFactory: { provided },
             clock: { [unowned self] in self.now }

@@ -28,14 +28,12 @@ class OfflineLicenseResult private constructor(val error: DrmPlaybackError?) {
  *
  * All methods block (network, CDM): call them from a background thread. One instance serves all
  * downloads; the token and licence URLs are given per download in [acquire] and persisted.
- * Never logs tokens, challenges, licences or subtitle contents.
+ * Never logs tokens, challenges or licences.
  */
 @UnstableApi
 class OfflineLicenseManager internal constructor(
     private val config: OfflineLicenseConfig,
     private val store: OfflineLicenseStore,
-    /** Encrypted subtitles of the downloads; deleted together with their licence. */
-    val subtitles: EncryptedSubtitleStore,
     private val engineFactory: OfflineLicenseEngineFactory,
     private val client: WidevineOfflineLicenseClient,
     private val clock: () -> Long,
@@ -80,9 +78,9 @@ class OfflineLicenseManager internal constructor(
 
     /**
      * Fetches a fresh offline token and renews the licence; the new `keySetId` replaces the stored
-     * one. A refused token (403, incl. device limit) expires the download and deletes its licence
-     * and subtitles. A lapsed SSO token (`expired`), network or other failures leave all state
-     * unchanged so the host can refresh and retry.
+     * one. A refused token (403, incl. device limit) expires the download and deletes its licence.
+     * A lapsed SSO token (`expired`), network or other failures leave all state unchanged so the
+     * host can refresh and retry.
      */
     @Synchronized
     fun renew(downloadId: String): OfflineLicenseResult {
@@ -108,14 +106,13 @@ class OfflineLicenseManager internal constructor(
 
     /**
      * Forgets [downloadId]: releases the CDM licence (best effort, may fail offline) and always
-     * deletes the stored `keySetId` and the subtitles.
+     * deletes the stored `keySetId`.
      */
     @Synchronized
     fun release(downloadId: String) {
         val record = store.get(downloadId)
         record?.keySetId?.let { bestEffortRelease(OfflineMediaDrmCallback(client, record.endpoints, record.kidHex), it) }
         store.delete(downloadId)
-        subtitles.deleteAll(downloadId)
     }
 
     @Synchronized
@@ -153,7 +150,6 @@ class OfflineLicenseManager internal constructor(
                 record.downloadId, OfflineLicenseState.EXPIRED, null, record.kidHex, record.endpoints, record.savedAtMillis,
             ),
         )
-        subtitles.deleteAll(record.downloadId)
     }
 
     private fun bestEffortRelease(callback: MediaDrmCallback, keySetId: ByteArray) {
@@ -188,8 +184,7 @@ class OfflineLicenseManager internal constructor(
         val RENEWAL_THRESHOLD_SECONDS: Long = TimeUnit.DAYS.toSeconds(1)
 
         /**
-         * Production manager. State lives under `noBackupFilesDir` (excluded from backups); subtitle
-         * keys live in Android Keystore.
+         * Production manager. State lives under `noBackupFilesDir` (excluded from backups).
          */
         @JvmStatic
         fun create(context: Context, config: OfflineLicenseConfig): OfflineLicenseManager {
@@ -197,7 +192,6 @@ class OfflineLicenseManager internal constructor(
             return OfflineLicenseManager(
                 config = config,
                 store = FileOfflineLicenseStore(File(root, "offline-licenses")),
-                subtitles = EncryptedSubtitleStore(File(root, "subtitles")),
                 engineFactory = Media3OfflineLicenseEngine.FACTORY,
                 client = WidevineOfflineLicenseClient(config),
                 clock = System::currentTimeMillis,

@@ -19,13 +19,10 @@ public struct OfflineLicenseResult: Equatable {
 ///
 /// One instance serves all downloads; the token, licence and certificate URLs are given per
 /// download in `acquire` and persisted. Operations are serialised. Never logs tokens, SPCs, CKCs,
-/// keys or subtitle contents. FairPlay does not run on the simulator.
+/// keys. FairPlay does not run on the simulator.
 public final class FairPlayOfflineLicenseManager {
     /// Renewal is due when a day or less of the licence remains.
     public static let renewalThreshold: TimeInterval = 24 * 60 * 60
-
-    /// Encrypted subtitles of the downloads; deleted together with their licence.
-    public let subtitles: EncryptedSubtitleStore
 
     private struct Failure: Error {
         let error: DrmPlaybackError
@@ -44,13 +41,12 @@ public final class FairPlayOfflineLicenseManager {
     private var attachedAssets = [ObjectIdentifier: String]()
 
     /// Production manager. State lives in Application Support `drm-kit/` (excluded from backup,
-    /// protected until first unlock); the subtitle key lives in the Keychain.
+    /// protected until first unlock).
     public convenience init(config: OfflineLicenseConfig) throws {
         let root = try DrmKitFiles.defaultRoot()
         self.init(
             config: config,
             store: FileOfflineLicenseStore(dir: root.appendingPathComponent("offline-licenses", isDirectory: true)),
-            subtitles: EncryptedSubtitleStore(root: root.appendingPathComponent("subtitles", isDirectory: true)),
             client: FairPlayOfflineLicenseClient(config: config),
             driverFactory: { AVOfflineKeyDriver() },
             clock: Date.init
@@ -60,14 +56,12 @@ public final class FairPlayOfflineLicenseManager {
     init(
         config: OfflineLicenseConfig,
         store: OfflineLicenseStore,
-        subtitles: EncryptedSubtitleStore,
         client: FairPlayOfflineLicenseClient,
         driverFactory: @escaping () -> FairPlayOfflineKeyDriver,
         clock: @escaping () -> Date
     ) {
         self.config = config
         self.store = store
-        self.subtitles = subtitles
         self.client = client
         self.driverFactory = driverFactory
         self.clock = clock
@@ -113,9 +107,9 @@ public final class FairPlayOfflineLicenseManager {
     }
 
     /// Fetches a fresh offline token and a new persistable key that replaces the stored one. A
-    /// refused token (403, incl. device limit) expires the download and deletes its key and
-    /// subtitles. A lapsed SSO token (`expired`), network or other failures leave all state
-    /// unchanged so the host can refresh and retry.
+    /// refused token (403, incl. device limit) expires the download and deletes its key. A lapsed
+    /// SSO token (`expired`), network or other failures leave all state unchanged so the host can
+    /// refresh and retry.
     public func renew(downloadId: String) async -> OfflineLicenseResult {
         await mutex.withLock {
             guard let record = self.store.get(downloadId) else { return .failure(.unknown) }
@@ -145,13 +139,12 @@ public final class FairPlayOfflineLicenseManager {
         }
     }
 
-    /// Forgets `downloadId`: always deletes the stored key, record and subtitles, then invalidates
-    /// the persistable key best effort (a failure changes nothing).
+    /// Forgets `downloadId`: always deletes the stored key and record, then invalidates the
+    /// persistable key best effort (a failure changes nothing).
     public func release(downloadId: String) async {
         await mutex.withLock {
             let record = self.store.get(downloadId)
             self.store.delete(downloadId)
-            self.subtitles.deleteAll(downloadId: downloadId)
             guard let blob = record?.keyBlob else { return }
             let driver = self.driverFactory()
             await driver.invalidate(persistableKey: blob)
@@ -380,7 +373,6 @@ public final class FairPlayOfflineLicenseManager {
         if (try? store.put(expired)) == nil {
             store.delete(record.downloadId)
         }
-        subtitles.deleteAll(downloadId: record.downloadId)
     }
 
     private static func typed(_ error: Error) -> DrmPlaybackError {
