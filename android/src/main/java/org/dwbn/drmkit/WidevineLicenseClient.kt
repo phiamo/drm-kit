@@ -79,6 +79,7 @@ class WidevineLicenseClient @JvmOverloads constructor(
                     409 -> DrmPlaybackError.blockedByStreamLimit
                     403 -> DrmPlaybackError.notEntitled
                     401 -> DrmPlaybackError.expired
+                    429 -> DrmPlaybackError.rateLimited
                     else -> DrmPlaybackError.unknown
                 }
                 CallKind.LICENSE -> when {

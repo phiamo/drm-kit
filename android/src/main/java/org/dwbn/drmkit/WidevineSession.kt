@@ -301,4 +301,5 @@ class WidevineSession @JvmOverloads constructor(
 private val DrmPlaybackError.isTerminal: Boolean
     get() = this == DrmPlaybackError.blockedByStreamLimit ||
         this == DrmPlaybackError.notEntitled ||
-        this == DrmPlaybackError.expired
+        this == DrmPlaybackError.expired ||
+        this == DrmPlaybackError.rateLimited

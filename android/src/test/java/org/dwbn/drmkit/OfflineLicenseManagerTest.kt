@@ -224,14 +224,14 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
-    fun acquireTwiceWithSameKeySetIdReleasesNothing() {
+    fun acquireTwiceWithSameKeySetIdStillReleasesTheLeftover() {
         acquireActive()
         enqueueTokenAndLicense()
 
         assertTrue(manager().acquire("dl-1", format(), endpoints()).isSuccess)
 
         assertArrayEquals(KEY_SET_1, store().get("dl-1")!!.keySetId)
-        assertTrue(engine.releasedKeySets.isEmpty())
+        assertEquals(listOf(KEY_SET_1.toList()), engine.releasedKeySets.map { it.toList() })
     }
 
     @Test
@@ -363,10 +363,8 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
-    fun acquireRetriesAfterLicensePolicyWhenLeftoverExists() {
+    fun acquireReleasesLeftoverBeforeDownloadLicense() {
         acquireActive()
-        engine.downloadFailCount = 1
-        engine.downloadFailWith = RuntimeException("""{"cdmError":167}: ERROR_DRM_LICENSE_POLICY""")
         engine.nextKeySet = KEY_SET_2
         enqueueTokenAndLicense()
 

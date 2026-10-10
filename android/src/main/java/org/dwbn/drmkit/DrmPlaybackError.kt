@@ -9,5 +9,6 @@ enum class DrmPlaybackError {
     offlineDeviceLimit,
     expired,
     network,
+    rateLimited,
     unknown,
 }

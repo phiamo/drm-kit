@@ -77,6 +77,12 @@ class WidevineOfflineLicenseClientTest {
     }
 
     @Test
+    fun token429IsRateLimited() {
+        server.enqueue(MockResponse().setResponseCode(429).setBody("""{"detail":"Too many DRM token requests."}"""))
+        assertTokenError(DrmPlaybackError.rateLimited)
+    }
+
+    @Test
     fun token500AndMissingTokenAreUnknown() {
         server.enqueue(MockResponse().setResponseCode(500))
         assertTokenError(DrmPlaybackError.unknown)

@@ -145,9 +145,11 @@ final class FairPlayOfflineLicenseClient {
             switch status {
             case 403: return isDeviceLimit(body) ? .offlineDeviceLimit : .notEntitled
             case 401: return .expired
+            case 429: return .rateLimited
             default: return .unknown
             }
         case .license:
+            if status == 429 { return .rateLimited }
             guard status == 403 else { return .unknown }
             return isDeviceLimit(body) ? .offlineDeviceLimit : .notEntitled
         case .certificate:

@@ -38,16 +38,21 @@ class OfflineLicenseManager internal constructor(
     private val client: WidevineOfflineLicenseClient,
     private val clock: () -> Long,
 ) {
-    /**
+        /**
      * Acquires an offline licence for the audio [format] of [downloadId] (its `drmInitData` must
-     * hold the Widevine PSSH) and stores the `keySetId`. Existing state is untouched on failure.
+     * hold the Widevine PSSH) and stores the `keySetId`. Any leftover persistable licence is
+     * released first so a second acquire does not hit CDM 167.
      */
     @Synchronized
     fun acquire(downloadId: String, format: Format, endpoints: OfflineEndpoints): OfflineLicenseResult {
         val kidHex = widevineKidHex(format) ?: return OfflineLicenseResult.failure(DrmPlaybackError.unknown)
         dropUnusableLeftover(downloadId)
         val previous = store.get(downloadId)
-        return downloadAndStore(downloadId, format, endpoints, kidHex, previous, retryOnPolicy = previous?.keySetId != null)
+        if (previous?.keySetId != null) {
+            bestEffortRelease(OfflineMediaDrmCallback(client, previous.endpoints, previous.kidHex), previous.keySetId)
+            store.delete(downloadId)
+        }
+        return downloadAndStore(downloadId, format, endpoints, kidHex, null, retryOnPolicy = false)
     }
 
     /** True when the licence is expired, or has [RENEWAL_THRESHOLD_SECONDS] or less left. */

@@ -70,7 +70,7 @@ public final class FairPlayOfflineLicenseManager {
     // MARK: Licence lifecycle
 
     /// Acquires an offline licence for the `skd://` `keyIdentifier` of `downloadId` and stores the
-    /// persistable key. Existing state is untouched on failure.
+    /// persistable key. Any leftover persistable key is invalidated first.
     public func acquire(
         downloadId: String,
         keyIdentifier: String,
@@ -78,6 +78,12 @@ public final class FairPlayOfflineLicenseManager {
     ) async -> OfflineLicenseResult {
         await mutex.withLock {
             guard let kidHex = FairPlayKeyIds.parse(keyIdentifier)?.kidHex else { return .failure(.unknown) }
+            if let previous = self.store.get(downloadId), let blob = previous.keyBlob {
+                self.store.delete(downloadId)
+                let driver = self.driverFactory()
+                await driver.invalidate(persistableKey: blob)
+                driver.close()
+            }
             let now = self.clock()
             let failure = await self.obtainKey(
                 keyIdentifier: keyIdentifier,

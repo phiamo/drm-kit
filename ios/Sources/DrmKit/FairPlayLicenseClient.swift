@@ -169,6 +169,7 @@ public final class FairPlayLicenseClient {
             case 409: return .blockedByStreamLimit
             case 403: return .notEntitled
             case 401: return .expired
+            case 429: return .rateLimited
             default: return .unknown
             }
         case .license:

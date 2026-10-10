@@ -79,9 +79,14 @@ class WidevineOfflineLicenseClient @JvmOverloads constructor(
                         DrmPlaybackError.notEntitled
                     }
                     401 -> DrmPlaybackError.expired
+                    429 -> DrmPlaybackError.rateLimited
                     else -> DrmPlaybackError.unknown
                 }
-                CallKind.LICENSE -> if (code == 403) DrmPlaybackError.notEntitled else DrmPlaybackError.unknown
+                CallKind.LICENSE -> when (code) {
+                    403 -> DrmPlaybackError.notEntitled
+                    429 -> DrmPlaybackError.rateLimited
+                    else -> DrmPlaybackError.unknown
+                }
                 CallKind.PROVISION -> DrmPlaybackError.unknown
             }
 

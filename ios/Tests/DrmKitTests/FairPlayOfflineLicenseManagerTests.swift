@@ -62,6 +62,19 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual("tok-1", requests[2].header("X-AxDRM-Message"))
     }
 
+    func testAcquireReleasesLeftoverPersistableKey() async {
+        let manager = makeManager()
+        enqueueAcquire(token: "tok-1", ckc: "ckc-1", expiresIn: 27 * Self.day)
+        _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
+        enqueueAcquire(token: "tok-2", ckc: "ckc-2", expiresIn: 27 * Self.day)
+
+        let result = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
+
+        XCTAssertTrue(result.isSuccess)
+        XCTAssertEqual([Data("persistable-ckc-1".utf8)], driver.invalidated)
+        XCTAssertEqual(Data("persistable-ckc-2".utf8), driver.issued.last?.responseKey)
+    }
+
     func testAcquirePersistsAcrossManagerInstances() async {
         enqueueAcquire(expiresIn: 27 * Self.day)
         _ = await makeManager().acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
@@ -132,6 +145,7 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
             ("/drm-token", .http(403), .notEntitled),
             ("/drm-token", .http(403, body: Data("{\"error\":\"offline_device_limit\"}".utf8)), .offlineDeviceLimit),
             ("/drm-token", .http(401), .expired),
+            ("/drm-token", .http(429), .rateLimited),
             ("/drm-token", .transportError, .network),
             ("/AcquireLicense", .http(403), .notEntitled),
             ("/AcquireLicense", .http(403, body: Data("{\"error\":\"offline_device_limit\"}".utf8)), .offlineDeviceLimit),
