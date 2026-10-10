@@ -168,6 +168,11 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         }
     }
 
+    func testPreloadStoredKeyOnlyForLocalPackages() {
+        XCTAssertTrue(FairPlayOfflineLicenseManager.shouldPreloadStoredKey(url: URL(fileURLWithPath: "/tmp/a.movpkg")))
+        XCTAssertFalse(FairPlayOfflineLicenseManager.shouldPreloadStoredKey(url: URL(string: "https://cdn.example/audio.m3u8")!))
+    }
+
     func testCertificateAndKeyRequestFailures() async {
         StubURLProtocol.enqueue("/cert.cer", .http(404))
         var result = await makeManager().acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)

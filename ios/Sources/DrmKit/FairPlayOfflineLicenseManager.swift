@@ -188,8 +188,15 @@ public final class FairPlayOfflineLicenseManager {
             record.state == .active,
             record.keyBlob != nil
         else { return }
+        // Preload only for a local .movpkg. Doing it on the remote HLS download asset races
+        // AVAssetDownload's own key request and fails the task after progress hits 100%.
+        guard Self.shouldPreloadStoredKey(url: asset.url) else { return }
         NSLog("FairPlay offline preload downloadId=%@ id=%@", downloadId, record.keyIdentifier)
         playback().process(identifier: record.keyIdentifier)
+    }
+
+    static func shouldPreloadStoredKey(url: URL) -> Bool {
+        url.isFileURL
     }
 
     func registerAttachedDownloadId(_ downloadId: String) {
