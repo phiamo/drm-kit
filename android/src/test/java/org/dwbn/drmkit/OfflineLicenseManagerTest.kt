@@ -183,10 +183,26 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
+    fun expiresAtFollowsRemainingTime() {
+        enqueueTokenAndLicense()
+        val manager = manager()
+        manager.acquire("dl-1", format(), endpoints())
+
+        engine.remaining = 300
+        assertEquals(now + 300_000L, manager.expiresAt("dl-1"))
+        engine.remaining = 0
+        assertEquals(now, manager.expiresAt("dl-1"))
+        engine.failWith = RuntimeException("cdm")
+        assertNull(manager.expiresAt("dl-1"))
+        assertNull(manager.expiresAt("nope"))
+    }
+
+    @Test
     fun unknownDownloadIsNoneAndNoOps() {
         val manager = manager()
         assertEquals(OfflineLicenseState.NONE, manager.state("nope"))
         assertFalse(manager.needsRenewal("nope"))
+        assertNull(manager.expiresAt("nope"))
         assertEquals(DrmPlaybackError.unknown, manager.renew("nope").error)
         assertNull(manager.offlineDrmConfiguration("nope"))
         assertNull(manager.createOfflineDrmSessionManager("nope"))
@@ -333,6 +349,52 @@ class OfflineLicenseManagerTest {
     }
 
     @Test
+    fun acquireDropsLeftoverWhenRemainingTimeIsLicensePolicy() {
+        acquireActive()
+        engine.remainingFailsWith = RuntimeException("""{"cdmError":167}: ERROR_DRM_LICENSE_POLICY""")
+        engine.nextKeySet = KEY_SET_2
+        enqueueTokenAndLicense()
+
+        assertTrue(manager().acquire("dl-1", format(), endpoints()).isSuccess)
+
+        assertEquals(OfflineLicenseState.ACTIVE, manager().state("dl-1"))
+        assertArrayEquals(KEY_SET_2, store().get("dl-1")!!.keySetId)
+        assertEquals(listOf(KEY_SET_1.toList()), engine.releasedKeySets.map { it.toList() })
+    }
+
+    @Test
+    fun acquireRetriesAfterLicensePolicyWhenLeftoverExists() {
+        acquireActive()
+        engine.downloadFailCount = 1
+        engine.downloadFailWith = RuntimeException("""{"cdmError":167}: ERROR_DRM_LICENSE_POLICY""")
+        engine.nextKeySet = KEY_SET_2
+        enqueueTokenAndLicense()
+
+        assertTrue(manager().acquire("dl-1", format(), endpoints()).isSuccess)
+        assertArrayEquals(KEY_SET_2, store().get("dl-1")!!.keySetId)
+        assertEquals(listOf(KEY_SET_1.toList()), engine.releasedKeySets.map { it.toList() })
+    }
+
+    @Test
+    fun renewLicensePolicyExpiresLeftover() {
+        acquireActive()
+        engine.failWith = RuntimeException("""{"cdmError":167}: ERROR_DRM_LICENSE_POLICY""")
+
+        assertEquals(DrmPlaybackError.unknown, manager().renew("dl-1").error)
+        assertEquals(OfflineLicenseState.EXPIRED, manager().state("dl-1"))
+        assertNull(store().get("dl-1")!!.keySetId)
+    }
+
+    @Test
+    fun needsRenewalLicensePolicyExpiresLeftover() {
+        acquireActive()
+        engine.remainingFailsWith = RuntimeException("""{"cdmError":167}: ERROR_DRM_LICENSE_POLICY""")
+
+        assertTrue(manager().needsRenewal("dl-1"))
+        assertEquals(OfflineLicenseState.EXPIRED, manager().state("dl-1"))
+    }
+
+    @Test
     fun releaseDeletesRecord() {
         acquireActive()
         val manager = manager()
@@ -444,6 +506,9 @@ class OfflineLicenseManagerTest {
         var nextKeySet: ByteArray = KEY_SET_1
         var renewedKeySet: ByteArray = KEY_SET_2
         var failWith: RuntimeException? = null
+        var remainingFailsWith: RuntimeException? = null
+        var downloadFailCount = 0
+        var downloadFailWith: RuntimeException? = null
         var releaseFails = false
         var wrapAndRetryCallback = false
         var provisionFirst: String? = null
@@ -474,6 +539,10 @@ class OfflineLicenseManagerTest {
         }
 
         override fun downloadLicense(format: Format): ByteArray {
+            if (downloadFailCount > 0) {
+                downloadFailCount--
+                throw downloadFailWith ?: RuntimeException("download")
+            }
             keyRequest()
             return nextKeySet
         }
@@ -489,6 +558,7 @@ class OfflineLicenseManagerTest {
         }
 
         override fun remainingSeconds(keySetId: ByteArray): Long {
+            remainingFailsWith?.let { throw it }
             failWith?.let { throw it }
             return remaining
         }

@@ -45,22 +45,9 @@ class OfflineLicenseManager internal constructor(
     @Synchronized
     fun acquire(downloadId: String, format: Format, endpoints: OfflineEndpoints): OfflineLicenseResult {
         val kidHex = widevineKidHex(format) ?: return OfflineLicenseResult.failure(DrmPlaybackError.unknown)
+        dropUnusableLeftover(downloadId)
         val previous = store.get(downloadId)
-        val callback = OfflineMediaDrmCallback(client, endpoints, kidHex)
-        val keySetId = try {
-            withEngine(callback) { it.downloadLicense(format) }
-        } catch (e: Exception) {
-            android.util.Log.w(
-                "DrmKitOffline",
-                "downloadLicense failed id=$downloadId typed=${errorOf(callback, e)} ${e.javaClass.simpleName}: ${e.message}",
-            )
-            return OfflineLicenseResult.failure(errorOf(callback, e))
-        }
-        store.put(
-            OfflineLicenseRecord(downloadId, OfflineLicenseState.ACTIVE, keySetId, kidHex, endpoints, clock()),
-        )
-        previous?.keySetId?.takeIf { !it.contentEquals(keySetId) }?.let { bestEffortRelease(callback, it) }
-        return OfflineLicenseResult.success()
+        return downloadAndStore(downloadId, format, endpoints, kidHex, previous, retryOnPolicy = previous?.keySetId != null)
     }
 
     /** True when the licence is expired, or has [RENEWAL_THRESHOLD_SECONDS] or less left. */
@@ -71,7 +58,8 @@ class OfflineLicenseManager internal constructor(
         if (record.state != OfflineLicenseState.ACTIVE || keySetId == null) return true
         return try {
             withEngine(NoNetworkMediaDrmCallback()) { it.remainingSeconds(keySetId) } <= RENEWAL_THRESHOLD_SECONDS
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (isLicenseUnusable(e)) expire(record)
             true
         }
     }
@@ -94,7 +82,7 @@ class OfflineLicenseManager internal constructor(
             withEngine(callback) { it.renewLicense(oldKeySetId) }
         } catch (e: Exception) {
             val error = errorOf(callback, e)
-            if (callback.tokenRefused) expire(record)
+            if (callback.tokenRefused || isLicenseUnusable(e)) expire(record)
             return OfflineLicenseResult.failure(error)
         }
         store.put(
@@ -117,6 +105,23 @@ class OfflineLicenseManager internal constructor(
 
     @Synchronized
     fun state(downloadId: String): OfflineLicenseState = store.get(downloadId)?.state ?: OfflineLicenseState.NONE
+
+    /**
+     * Epoch-ms expiry from the CDM remaining time, for the "expires within 3 days" copy.
+     * Unknown, expired, or unread licences: null.
+     */
+    @Synchronized
+    fun expiresAt(downloadId: String): Long? {
+        val record = store.get(downloadId) ?: return null
+        val keySetId = record.keySetId
+        if (record.state != OfflineLicenseState.ACTIVE || keySetId == null) return null
+        return try {
+            val remaining = withEngine(NoNetworkMediaDrmCallback()) { it.remainingSeconds(keySetId) }
+            if (remaining <= 0) clock() else clock() + TimeUnit.SECONDS.toMillis(remaining)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     /**
      * `MediaItem.DrmConfiguration` that plays [downloadId] from its stored `keySetId`, or null when
@@ -167,6 +172,62 @@ class OfflineLicenseManager internal constructor(
         } finally {
             engine.release()
         }
+    }
+
+    private fun downloadAndStore(
+        downloadId: String,
+        format: Format,
+        endpoints: OfflineEndpoints,
+        kidHex: String,
+        previous: OfflineLicenseRecord?,
+        retryOnPolicy: Boolean,
+    ): OfflineLicenseResult {
+        val callback = OfflineMediaDrmCallback(client, endpoints, kidHex)
+        val keySetId = try {
+            withEngine(callback) { it.downloadLicense(format) }
+        } catch (e: Exception) {
+            if (retryOnPolicy && previous?.keySetId != null && isLicenseUnusable(e)) {
+                bestEffortRelease(callback, previous.keySetId)
+                store.delete(downloadId)
+                return downloadAndStore(downloadId, format, endpoints, kidHex, null, retryOnPolicy = false)
+            }
+            android.util.Log.w(
+                "DrmKitOffline",
+                "downloadLicense failed id=$downloadId typed=${errorOf(callback, e)} ${e.javaClass.simpleName}: ${e.message}",
+            )
+            return OfflineLicenseResult.failure(errorOf(callback, e))
+        }
+        store.put(
+            OfflineLicenseRecord(downloadId, OfflineLicenseState.ACTIVE, keySetId, kidHex, endpoints, clock()),
+        )
+        previous?.keySetId?.takeIf { !it.contentEquals(keySetId) }?.let { bestEffortRelease(callback, it) }
+        return OfflineLicenseResult.success()
+    }
+
+    /** Story 59.7 leftover: CDM refuses remaining-time / renew (cdmError 167). Drop it so acquire can start clean. */
+    private fun dropUnusableLeftover(downloadId: String) {
+        val record = store.get(downloadId) ?: return
+        val keySetId = record.keySetId
+        if (record.state != OfflineLicenseState.ACTIVE || keySetId == null) {
+            return
+        }
+        try {
+            withEngine(NoNetworkMediaDrmCallback()) { it.remainingSeconds(keySetId) }
+        } catch (e: Exception) {
+            if (isLicenseUnusable(e)) release(downloadId)
+        }
+    }
+
+    private fun isLicenseUnusable(e: Throwable): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            val message = cause.message.orEmpty()
+            if (message.contains("ERROR_DRM_LICENSE_POLICY") || message.contains("\"cdmError\":167")) {
+                return true
+            }
+            cause = cause.cause?.takeIf { it !== cause }
+        }
+        return false
     }
 
     private fun errorOf(callback: OfflineMediaDrmCallback, e: Exception): DrmPlaybackError {

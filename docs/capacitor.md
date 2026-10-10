@@ -516,6 +516,7 @@ DrmSessionManager sessions = manager.createOfflineDrmSessionManager(downloadId);
 if (manager.needsRenewal(downloadId)) {          // true when <= 1 day left, or expired
   OfflineLicenseResult renewed = manager.renew(downloadId);
 }
+Long expiresAt = manager.expiresAt(downloadId);   // epoch ms from CDM remaining time; null if unknown
 manager.release(downloadId);                      // on delete: licence and keySetId
 ```
 
