@@ -23,7 +23,7 @@ protocol FairPlayKeyRequest: AnyObject {
 /// session releases itself. `onError` is called on an arbitrary queue.
 public final class FairPlaySession: NSObject {
     /// How the key request identifier becomes the SPC content identifier (Axinom reads the key URI
-    /// from it). The Story 58.2 pilot decides which one ferrix needs.
+    /// from it). Production uses `.keyUri`.
     public enum ContentIdentifierForm: String, CaseIterable {
         /// The manifest's `EXT-X-KEY` URI unchanged (e.g. `skd://<kid hex>:<iv hex>`).
         case keyUri

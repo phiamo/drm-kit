@@ -2,7 +2,7 @@ import AVFoundation
 import DrmKit
 import Foundation
 
-/// Story 58.2 pilot: plays one protected descriptor with `FairPlaySession` on a physical device and
+/// Pilot: plays one protected descriptor with `FairPlaySession` on a physical device and
 /// records what the pilot must answer (key-URI form, license requests per playback).
 /// Never logs the bearer, tokens, SPCs or CKCs.
 @MainActor

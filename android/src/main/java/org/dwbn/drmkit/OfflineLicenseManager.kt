@@ -209,7 +209,7 @@ class OfflineLicenseManager internal constructor(
         return OfflineLicenseResult.success()
     }
 
-    /** Story 59.7 leftover: CDM refuses remaining-time / renew (cdmError 167). Drop it so acquire can start clean. */
+    /** Leftover: CDM refuses remaining-time / renew (cdmError 167). Drop it so acquire can start clean. */
     private fun dropUnusableLeftover(downloadId: String) {
         val record = store.get(downloadId) ?: return
         val keySetId = record.keySetId
