@@ -140,7 +140,7 @@ Plugin-side details: [playlist DRM](https://github.com/phiamo/capacitor-plugin-p
 
 ## Contributing
 
-Work on DRM happens on `feature/vod-drm` (merge `main` first). Tag releases as `vX.Y.Z`: JitPack and SPM both build from the tag.
+Work happens on `main`. Tag releases as `vX.Y.Z`: JitPack and SPM both build from the tag.
 
 ## License
 

@@ -2,10 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/vod-drm]
+    branches: [main]
     tags: ['v*']
   pull_request:
-    branches: [main, feature/vod-drm]
+    branches: [main]
 
 jobs:
   test-android:
