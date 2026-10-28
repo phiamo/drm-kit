@@ -24,7 +24,7 @@ The two plugins never depend on drm-kit. Each exposes a small provider hook (`Au
 |---|---|---|
 | `DrmIdentifiers` (hex, UUID, FairPlay URI, Axinom key id/value) | ✅ | ✅ |
 | Widevine session for Media3 (`WidevineSession`) | ✅ 0.5.0 | — |
-| FairPlay session for `AVPlayer` (`FairPlaySession`) | — | 🧪 unreleased (device pilot pending) |
+| FairPlay session for `AVPlayer` (`FairPlaySession`) | — | ✅ 0.4.0 |
 | Offline licences (`OfflineLicenseManager` / `FairPlayOfflineLicenseManager`) | ✅ 0.5.0 (device check pending) | ✅ 0.5.0 (device check pending) |
 
 Current Android release: **0.5.0** (offline Widevine licences; streaming unchanged). Current iOS release: **0.5.0** (offline FairPlay licences; streaming unchanged). `1.0.0` will follow the first production DRM release.
