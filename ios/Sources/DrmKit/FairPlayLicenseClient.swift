@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// HTTP client for the FairPlay application certificate, `/drm-token`, Axinom FairPlay
 /// AcquireLicense and the playback-session heartbeat (mirrors Android `WidevineLicenseClient`).
@@ -26,6 +27,8 @@ public final class FairPlayLicenseClient {
     }
 
     private enum CallKind { case certificate, token, license, heartbeat }
+
+    private static let log = Logger(subsystem: "org.dwbn.drmkit", category: "FairPlayLicense")
 
     private let config: FairPlaySession.Config
     private let urlSession: URLSession
@@ -141,6 +144,12 @@ public final class FairPlayLicenseClient {
             throw DrmPlaybackError.network
         }
         guard let http = response as? HTTPURLResponse else { throw DrmPlaybackError.unknown }
+        if kind == .license {
+            let axinom = http.value(forHTTPHeaderField: Self.headerAxinomErrorCode) ?? "-"
+            Self.log.info(
+                "AcquireLicense status=\(http.statusCode, privacy: .public) axinom=\(axinom, privacy: .public)"
+            )
+        }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.mapHttpError(
                 kind,
