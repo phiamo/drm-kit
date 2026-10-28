@@ -199,7 +199,7 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         XCTAssertEqual(.unknown, failing.last?.playbackError)
     }
 
-    func testFailedAcquireKeepsExistingDownload() async {
+    func testFailedAcquireDropsTheLeftoverDownload() async {
         let manager = makeManager()
         enqueueAcquire(ckc: "first", expiresIn: Self.day * 27)
         _ = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
@@ -210,8 +210,9 @@ final class FairPlayOfflineLicenseManagerTests: XCTestCase {
         let result = await manager.acquire(downloadId: "dl-1", keyIdentifier: Self.skd, endpoints: endpoints)
 
         XCTAssertEqual(.failure(.notEntitled), result)
-        XCTAssertEqual(.active, manager.state(downloadId: "dl-1"))
-        XCTAssertEqual(Data("persistable-first".utf8), playbackKey(manager))
+        XCTAssertEqual(.none, manager.state(downloadId: "dl-1"))
+        XCTAssertEqual([Data("persistable-first".utf8)], driver.invalidated)
+        XCTAssertNil(playbackKey(manager))
     }
 
     // MARK: Renewal
