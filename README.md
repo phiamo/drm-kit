@@ -27,7 +27,9 @@ The two plugins never depend on drm-kit. Each exposes a small provider hook (`Au
 | FairPlay session for `AVPlayer` (`FairPlaySession`) | — | 🧪 unreleased (device pilot pending) |
 | Offline licences (`OfflineLicenseManager` / `FairPlayOfflineLicenseManager`) | ✅ 0.5.0 (device check pending) | ✅ 0.5.0 (device check pending) |
 
-Current Android release: **0.5.0** (offline Widevine licences; streaming unchanged). Current iOS release: **0.5.0** (offline FairPlay licences; streaming unchanged). `1.0.0` will follow the first production DRM release. Minimums: Android SDK 24, iOS 15.
+Current Android release: **0.5.0** (offline Widevine licences; streaming unchanged). Current iOS release: **0.5.0** (offline FairPlay licences; streaming unchanged). `1.0.0` will follow the first production DRM release.
+
+Minimums are floors, not the only supported releases: **Android 7 (API 24) and later**, **iOS 15 and later**, including current iOS (iOS 18 through the current iOS). There is no upper cap.
 
 ## Install
 
